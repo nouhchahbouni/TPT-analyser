@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>TPT Analyzer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="header">
+    <div class="logo">
+      <div class="logo-badge"><span class="logo-tpt">TPT</span><span class="logo-analyzer">Analyzer</span></div>
+    </div>
+    <p class="tagline">Discover What's Selling on TPT</p>
+  </div>
+
+  <div class="body">
+    <div class="search-row">
+      <input id="searchInput" placeholder="Search TPT keywords..." type="text" />
+      <button id="searchBtn">🔍</button>
+    </div>
+
+    <div id="searchResults" class="results" style="display:none"></div>
+
+    <div class="trending-section">
+      <h3>🔥 Trending Now</h3>
+      <div id="trendingList" class="trending-list">
+        <p class="loading">Loading trending products...</p>
+      </div>
+    </div>
+
+    <button class="open-platform-btn" id="openPlatform">
+      Open TPT Analyzer Platform →
+    </button>
+
+    <div class="status" id="apiStatus"></div>
+  </div>
+</body>
+<script src="popup.js"></script>
+</html>
