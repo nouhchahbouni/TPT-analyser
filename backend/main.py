@@ -331,13 +331,22 @@ async def debug_scrape(q: str = "math"):
         json_ld = sc._extract_json_ld(soup)
         next_products = sc._extract_next_data(soup)
         cards = soup.select("[data-testid='product-card']") or soup.select(".ProductRowCard")
+        inline = sc._extract_inline_json(soup)
+        scripts = soup.find_all("script")
+        script_keywords = []
+        for s in scripts:
+            t = s.string or ""
+            if any(k in t for k in ["resource", "product", "seller", "price", "rating"]):
+                script_keywords.append({"len": len(t), "preview": t[:200]})
         return {
             "html_length": len(html),
             "has_next_data": has_next_data,
             "json_ld_count": len(json_ld),
             "next_data_count": len(next_products),
             "html_cards_count": len(cards),
-            "html_preview": html[:500],
+            "inline_json_count": len(inline),
+            "scripts_with_data": script_keywords[:3],
+            "html_preview": html[:300],
         }
     except Exception as e:
         return {"error": str(e)}

@@ -60,11 +60,12 @@ def _fetch_html(url: str) -> str:
             "api_key": SCRAPINGBEE_KEY,
             "url": url,
             "render_js": "true",
-            "wait": "3000",
+            "wait": "8000",
             "block_ads": "true",
             "block_resources": "false",
+            "premium_proxy": "true",
         },
-        timeout=60,
+        timeout=120,
     )
     resp.raise_for_status()
     return resp.text
@@ -187,6 +188,57 @@ def _extract_next_data(soup: BeautifulSoup) -> List[Dict]:
         return []
 
 
+def _extract_inline_json(soup: BeautifulSoup) -> List[Dict]:
+    """Search all inline scripts for product arrays."""
+    products = []
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        if not text or len(text) < 100:
+            continue
+        # Look for JSON blobs containing product arrays
+        matches = re.findall(r'\{[^{}]*"(?:name|title)"[^{}]*"(?:price|rating)"[^{}]*\}', text)
+        for m in matches:
+            try:
+                obj = json.loads(m)
+                name = obj.get("name") or obj.get("title") or ""
+                if name:
+                    products.append({
+                        "title": str(name)[:200],
+                        "url": obj.get("url", ""),
+                        "price": float(obj.get("price", 0)),
+                        "rating": float(obj.get("rating", 0)),
+                        "reviews_total": int(obj.get("reviewCount", 0)),
+                        "thumbnail": obj.get("image", ""),
+                        "shop_name": obj.get("brand", {}).get("name", "") if isinstance(obj.get("brand"), dict) else "",
+                        "has_bestseller": False,
+                        "has_image": bool(obj.get("image")),
+                    })
+            except Exception:
+                continue
+        # Also try larger JSON blobs with arrays
+        if not products:
+            for match in re.finditer(r'"resources"\s*:\s*(\[[^\]]{200,}\])', text):
+                try:
+                    arr = json.loads(match.group(1))
+                    for item in arr:
+                        if isinstance(item, dict) and (item.get("name") or item.get("title")):
+                            name = item.get("name") or item.get("title", "")
+                            products.append({
+                                "title": str(name)[:200],
+                                "url": item.get("url", ""),
+                                "price": float(item.get("price", 0)),
+                                "rating": float(item.get("rating", 0)),
+                                "reviews_total": int(item.get("ratingCount", 0)),
+                                "thumbnail": item.get("thumbnailUrl", ""),
+                                "shop_name": item.get("sellerName", ""),
+                                "has_bestseller": bool(item.get("isBestSeller")),
+                                "has_image": bool(item.get("thumbnailUrl")),
+                            })
+                except Exception:
+                    continue
+    return products
+
+
 def _parse_search_page(html: str, keyword: str) -> List[Dict]:
     """Parse TPT search results page HTML → list of product dicts."""
     soup = BeautifulSoup(html, "html.parser")
@@ -201,6 +253,12 @@ def _parse_search_page(html: str, keyword: str) -> List[Dict]:
     products = _extract_json_ld(soup)
     if products:
         print(f"[scraper] ✅ Extracted {len(products)} products from JSON-LD")
+        return _finalize(products, keyword)
+
+    # 3. Try inline JS JSON blobs
+    products = _extract_inline_json(soup)
+    if products:
+        print(f"[scraper] ✅ Extracted {len(products)} products from inline JS")
         return _finalize(products, keyword)
 
     # 3. Fallback: parse product cards from HTML
