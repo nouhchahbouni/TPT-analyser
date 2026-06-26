@@ -541,6 +541,180 @@ def _fetch_tpt_js(keyword: str) -> List[Dict]:
     return products
 
 
+def _fetch_tpt_search(keyword: str) -> str:
+    """Fetch TPT search page HTML. Tries direct request first, falls back to ScrapingBee."""
+    url = f"https://www.teacherspayteachers.com/browse?search={requests.utils.quote(keyword)}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=30)
+        if resp.status_code == 200 and "apolloState" in resp.text:
+            print(f"[scraper] ✅ Direct TPT fetch succeeded for '{keyword}'")
+            return resp.text
+        print(f"[scraper] Direct fetch status={resp.status_code}, trying ScrapingBee...")
+    except Exception as e:
+        print(f"[scraper] Direct fetch failed: {e}, trying ScrapingBee...")
+
+    if not SCRAPINGBEE_KEY:
+        raise RuntimeError("Direct fetch blocked and SCRAPINGBEE_API_KEY not set")
+
+    resp = requests.get(
+        SCRAPINGBEE_URL,
+        params={
+            "api_key": SCRAPINGBEE_KEY,
+            "url": url,
+            "render_js": "false",
+            "block_ads": "true",
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.text
+
+
+def _extract_apollo_products(html: str) -> List[Dict]:
+    """Extract products from TPT's apolloState embedded in the HTML."""
+    # Find the apolloState JSON in a <script> tag
+    m = re.search(r'"apolloState"\s*:\s*(\{)', html)
+    if not m:
+        return []
+
+    # Extract the full apolloState object by counting braces
+    start = m.start(1)
+    depth = 0
+    end = start
+    for i in range(start, min(start + 5_000_000, len(html))):
+        c = html[i]
+        if c == '{':
+            depth += 1
+        elif c == '}':
+            depth -= 1
+            if depth == 0:
+                end = i + 1
+                break
+    if end <= start:
+        return []
+
+    try:
+        apollo = json.loads(html[start:end])
+    except Exception as e:
+        print(f"[scraper] apolloState parse error: {e}")
+        return []
+
+    # Find the searchResources key in ROOT_QUERY
+    root = apollo.get("ROOT_QUERY", {})
+    search_key = None
+    for key in root:
+        if key.startswith("searchResources("):
+            search_key = key
+            break
+
+    if not search_key:
+        print("[scraper] No searchResources key found in apolloState ROOT_QUERY")
+        return []
+
+    search_result = root[search_key]
+    resource_refs = search_result.get("resources", [])
+    if not resource_refs:
+        # Sometimes nested under edges or items
+        resource_refs = search_result.get("edges", []) or search_result.get("items", [])
+
+    products = []
+    for ref_obj in resource_refs:
+        ref_key = ref_obj.get("__ref") if isinstance(ref_obj, dict) else None
+        if not ref_key:
+            continue
+        resource = apollo.get(ref_key, {})
+        if not resource:
+            continue
+
+        title = resource.get("name") or resource.get("title") or ""
+        if not title:
+            continue
+
+        # Extract price from nested pricing object
+        price = 0.0
+        pricing_ref = resource.get("pricing", {})
+        if isinstance(pricing_ref, dict):
+            pricing_key = pricing_ref.get("__ref")
+            if pricing_key:
+                pricing_obj = apollo.get(pricing_key, {})
+            else:
+                pricing_obj = pricing_ref
+            # nonTransferableLicenses has standard single-license price
+            ntl = pricing_obj.get("nonTransferableLicenses", {})
+            if isinstance(ntl, dict):
+                ntl_key = ntl.get("__ref")
+                if ntl_key:
+                    ntl = apollo.get(ntl_key, {})
+                price = float(ntl.get("price", 0) or 0)
+
+        # Rating
+        rating_ref = resource.get("rating", {})
+        rating = 0.0
+        review_count = 0
+        if isinstance(rating_ref, dict):
+            rating_key = rating_ref.get("__ref")
+            if rating_key:
+                rating_obj = apollo.get(rating_key, {})
+            else:
+                rating_obj = rating_ref
+            rating = float(rating_obj.get("averageRating", 0) or 0)
+            review_count = int(rating_obj.get("count", 0) or 0)
+
+        # Thumbnail
+        thumb = ""
+        thumbs = resource.get("thumbnails", []) or resource.get("previewImages", [])
+        if isinstance(thumbs, list) and thumbs:
+            first = thumbs[0]
+            if isinstance(first, dict):
+                thumb_key = first.get("__ref")
+                if thumb_key:
+                    thumb_obj = apollo.get(thumb_key, {})
+                    thumb = thumb_obj.get("url", "") or thumb_obj.get("thumbnailUrl", "")
+                else:
+                    thumb = first.get("url", "") or first.get("thumbnailUrl", "")
+
+        # Store
+        store_ref = resource.get("store", {}) or resource.get("seller", {})
+        shop_name = ""
+        shop_slug = ""
+        if isinstance(store_ref, dict):
+            store_key = store_ref.get("__ref")
+            if store_key:
+                store_obj = apollo.get(store_key, {})
+                shop_name = store_obj.get("name", "") or store_obj.get("storeName", "")
+                shop_slug = store_obj.get("urlName", "") or store_obj.get("storeUrlName", "")
+
+        # URL / ID
+        rid = resource.get("id") or resource.get("resourceId") or ref_key.split(":")[-1]
+        slug = resource.get("slug") or resource.get("canonicalSlug") or ""
+        if slug:
+            url = f"https://www.teacherspayteachers.com/Product/{slug}"
+        else:
+            url = f"https://www.teacherspayteachers.com/Product/{rid}"
+
+        products.append({
+            "title": str(title)[:200],
+            "url": url,
+            "price": price,
+            "rating": rating,
+            "reviews_total": review_count,
+            "thumbnail": thumb,
+            "shop_name": shop_name,
+            "shop_url": f"https://www.teacherspayteachers.com/Store/{shop_slug}" if shop_slug else "",
+            "has_bestseller": bool(resource.get("isBestSeller") or resource.get("bestSeller")),
+            "has_image": bool(thumb),
+        })
+
+    print(f"[scraper] Apollo: found {len(products)} products from {len(resource_refs)} refs")
+    return products
+
+
 def _fetch_algolia(keyword: str, count: int = 30) -> List[Dict]:
     """Call TPT's Algolia search API directly — no JS rendering needed."""
     endpoint = f"https://{ALGOLIA_APP_ID.lower()}-dsn.algolia.net/1/indexes/{ALGOLIA_INDEX}/query"
@@ -595,15 +769,16 @@ def _fetch_algolia(keyword: str, count: int = 30) -> List[Dict]:
 
 
 def scrape_keyword_sync(keyword: str, count: int = 30) -> List[Dict]:
-    """Scrape TPT search for a keyword via Algolia API."""
+    """Scrape TPT search results using apolloState embedded in the HTML."""
     try:
-        products = _fetch_algolia(keyword, count)
+        html = _fetch_tpt_search(keyword)
+        products = _extract_apollo_products(html)
         if products:
-            print(f"[scraper] ✅ {len(products)} real products via Algolia for '{keyword}'")
-            return _finalize(products, keyword)
-        print(f"[scraper] ⚠️ Algolia returned 0 results for '{keyword}'")
+            print(f"[scraper] ✅ {len(products)} real products via TPT apolloState for '{keyword}'")
+            return _finalize(products[:count], keyword)
+        print(f"[scraper] ⚠️ apolloState extraction returned 0 products for '{keyword}'")
     except Exception as e:
-        print(f"[scraper] ⚠️ Algolia failed for '{keyword}': {e}")
+        print(f"[scraper] ⚠️ TPT fetch failed for '{keyword}': {e}")
 
     print(f"[scraper] ⚠️ Using mock data for '{keyword}'")
     return generate_mock_products(keyword, count)

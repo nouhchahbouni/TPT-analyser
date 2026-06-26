@@ -358,6 +358,28 @@ async def export_csv(q: str = "", category: str = ""):
 
 # ─────────────────────────────── Health ───────────────────────────────────────
 
+@app.get("/api/debug/tpt")
+async def debug_tpt(q: str = "math"):
+    """Test TPT apolloState extraction. Shows real results or explains what failed."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    try:
+        html = await loop.run_in_executor(None, sc._fetch_tpt_search, q)
+        has_apollo = "apolloState" in html
+        has_search = "searchResources" in html
+        products = sc._extract_apollo_products(html) if has_apollo else []
+        return {
+            "status": "success" if products else "no_products",
+            "html_length": len(html),
+            "has_apolloState": has_apollo,
+            "has_searchResources": has_search,
+            "products_found": len(products),
+            "sample": products[:2] if products else [],
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
+
+
 @app.get("/api/debug/algolia")
 async def debug_algolia(q: str = "math"):
     """Test TPT's Algolia API connectivity. Shows exactly what's working or not."""
