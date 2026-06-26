@@ -319,6 +319,29 @@ async def export_csv(q: str = "", category: str = ""):
 
 # ─────────────────────────────── Health ───────────────────────────────────────
 
+@app.get("/api/debug/scrape")
+async def debug_scrape(q: str = "math"):
+    import scraper as sc
+    url = f"https://www.teacherspayteachers.com/browse?search={q}&order=Most+Reviewed"
+    try:
+        html = sc._fetch_html(url)
+        from bs4 import BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        has_next_data = bool(soup.find("script", id="__NEXT_DATA__"))
+        json_ld = sc._extract_json_ld(soup)
+        next_products = sc._extract_next_data(soup)
+        cards = soup.select("[data-testid='product-card']") or soup.select(".ProductRowCard")
+        return {
+            "html_length": len(html),
+            "has_next_data": has_next_data,
+            "json_ld_count": len(json_ld),
+            "next_data_count": len(next_products),
+            "html_cards_count": len(cards),
+            "html_preview": html[:500],
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/api/debug/env")
 async def debug_env():
     key = os.getenv("SCRAPINGBEE_API_KEY", "")
