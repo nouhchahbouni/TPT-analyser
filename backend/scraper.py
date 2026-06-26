@@ -532,27 +532,68 @@ def _fetch_tpt_js(keyword: str) -> List[Dict]:
     return products
 
 
-def scrape_keyword_sync(keyword: str, count: int = 30) -> List[Dict]:
-    """Scrape TPT search for a keyword. Returns enriched product list."""
-    # Try JS snippet extraction (reads from window state after page load)
-    try:
-        products = _fetch_tpt_js(keyword)
-        if products:
-            print(f"[scraper] ✅ {len(products)} real products via JS extraction for '{keyword}'")
-            return _finalize(products, keyword)
-    except Exception as e:
-        print(f"[scraper] JS extraction failed for '{keyword}': {e}")
+def _fetch_algolia(keyword: str, count: int = 30) -> List[Dict]:
+    """Call TPT's Algolia search API directly — no JS rendering needed."""
+    resp = requests.post(
+        "https://fnse9iyl6s-dsn.algolia.net/1/indexes/production_resources/query",
+        headers={
+            "x-algolia-application-id": "FNSE9IYL6S",
+            "x-algolia-api-key": "YWQzNjM4ZTk0OGZlMzVlMTVlZWVkMzFiZDkwNGE5OTQ4NDI1ODQ5ZWQzZWZiMzQ5ZGUxNjQ3YTQwMWYzYjg1M2ZpbHRlcnM9JTI4aXNGcmVlJTNBZmFsc2UlMjklMjBBTkQlMjAlMjhpc0FwcHJvdmVkJTNBdHJ1ZSUyOQ==",
+            "Content-Type": "application/json",
+        },
+        json={
+            "query": keyword,
+            "hitsPerPage": count,
+            "attributesToRetrieve": [
+                "name", "price", "rating", "ratingCount", "id",
+                "sellerName", "storeUrlName", "thumbnailUrl",
+                "isBestSeller", "previewImages", "gradeMin", "gradeMax",
+                "subjectList", "resourceTypeList",
+            ],
+        },
+        timeout=30,
+    )
+    resp.raise_for_status()
+    hits = resp.json().get("hits", [])
+    products = []
+    for r in hits:
+        name = r.get("name", "")
+        if not name:
+            continue
+        rid = r.get("id") or r.get("objectID") or ""
+        url = f"https://www.teacherspayteachers.com/Product/{rid}" if rid else ""
+        price_raw = r.get("price", 0)
+        price = float(price_raw) / 100 if isinstance(price_raw, int) and price_raw > 100 else float(price_raw or 0)
+        thumb = r.get("thumbnailUrl") or ""
+        if not thumb and r.get("previewImages"):
+            thumb = r["previewImages"][0].get("url", "") if isinstance(r["previewImages"], list) else ""
+        products.append({
+            "title": str(name)[:200],
+            "url": url,
+            "price": price,
+            "rating": float(r.get("rating") or 0),
+            "reviews_total": int(r.get("ratingCount") or 0),
+            "thumbnail": thumb,
+            "shop_name": r.get("sellerName") or "",
+            "shop_url": f"https://www.teacherspayteachers.com/Store/{r.get('storeUrlName', '')}",
+            "has_bestseller": bool(r.get("isBestSeller")),
+            "has_image": bool(thumb),
+            "grade_level": f"{r.get('gradeMin', '')}-{r.get('gradeMax', '')}".strip("-"),
+            "category": ", ".join(r.get("subjectList", [])[:2]),
+        })
+    return products
 
-    # Fallback: scrape HTML page with JS rendering
-    url = f"https://www.teacherspayteachers.com/browse?search={keyword.replace(' ', '+')}&order=Most+Reviewed"
+
+def scrape_keyword_sync(keyword: str, count: int = 30) -> List[Dict]:
+    """Scrape TPT search for a keyword via Algolia API."""
     try:
-        html = _fetch_html(url)
-        products = _parse_search_page(html, keyword)
+        products = _fetch_algolia(keyword, count)
         if products:
-            print(f"[scraper] ✅ {len(products)} real products via HTML for '{keyword}'")
-            return products
+            print(f"[scraper] ✅ {len(products)} real products via Algolia for '{keyword}'")
+            return _finalize(products, keyword)
+        print(f"[scraper] ⚠️ Algolia returned 0 results for '{keyword}'")
     except Exception as e:
-        print(f"[scraper] ⚠️ HTML scrape failed for '{keyword}': {e}")
+        print(f"[scraper] ⚠️ Algolia failed for '{keyword}': {e}")
 
     print(f"[scraper] ⚠️ Using mock data for '{keyword}'")
     return generate_mock_products(keyword, count)
