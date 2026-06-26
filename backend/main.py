@@ -339,16 +339,36 @@ async def debug_scrape(q: str = "math"):
             t = s.string or ""
             if any(k in t for k in ["resource", "product", "seller", "price", "rating"]):
                 script_keywords.append({"len": len(t), "preview": t[:200]})
+        # Extract state keys
+        state_keys = []
+        state_preview = ""
+        for script in soup.find_all("script"):
+            text = script.string or ""
+            if "var state" in text and len(text) > 1000:
+                m = re.search(r'var state\s*=\s*(\{)', text)
+                if m:
+                    state_preview = text[m.start():m.start()+2000]
+                    try:
+                        import json as _json
+                        raw = text[m.start()+len("var state = "):]
+                        depth, end = 0, 0
+                        for i, ch in enumerate(raw):
+                            if ch == '{': depth += 1
+                            elif ch == '}':
+                                depth -= 1
+                                if depth == 0:
+                                    end = i + 1
+                                    break
+                        obj = _json.loads(raw[:end])
+                        state_keys = list(obj.keys())
+                    except Exception as e:
+                        state_keys = [f"parse_error: {e}"]
+                break
         return {
             "html_length": len(html),
-            "has_next_data": has_next_data,
-            "json_ld_count": len(json_ld),
-            "next_data_count": len(next_products),
-            "html_cards_count": len(cards),
             "tpt_state_count": len(state_products),
-            "inline_json_count": len(inline),
-            "scripts_with_data": script_keywords[:3],
-            "html_preview": html[:300],
+            "state_top_keys": state_keys,
+            "state_preview": state_preview[:1000],
         }
     except Exception as e:
         return {"error": str(e)}
