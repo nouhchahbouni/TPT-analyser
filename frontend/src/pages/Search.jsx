@@ -133,7 +133,7 @@ export default function Search() {
       const res = await axios.get('/api/products', {
         params: { q, limit: 100 }
       })
-      let prods = res.data.products || []
+      let prods = Array.isArray(res.data) ? res.data : (res.data.products || [])
 
       // Apply client-side filters
       if (selCats.length > 0) {
