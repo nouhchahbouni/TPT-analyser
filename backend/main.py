@@ -385,33 +385,29 @@ async def debug_tpt(q: str = "math"):
     except Exception as e:
         result["html_fetch"] = {"status": "error", "error": str(e)}
 
-    # Test 2: GraphQL API
-    def _try_graphql():
+    # Test 2: GraphQL introspection — find the real field names
+    def _try_introspect():
         resp = _req.post(
-            "https://www.teacherspayteachers.com/graph/graphql?opname=SearchResources",
+            "https://www.teacherspayteachers.com/graph/graphql?opname=Introspect",
             headers={
                 "Content-Type": "application/json",
                 "Accept": "application/json",
                 "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
                 "Origin": "https://www.teacherspayteachers.com",
-                "Referer": f"https://www.teacherspayteachers.com/browse?search={q}",
+                "Referer": "https://www.teacherspayteachers.com/browse?search=math",
                 "x-requested-with": "XMLHttpRequest",
             },
-            json={
-                "operationName": "SearchResources",
-                "variables": {"query": q, "pageNum": 0, "resourcesPerPage": 5, "sortType": "RELEVANCE", "debug": False, "inputFacets": [], "withFacets": [], "withHighlights": False, "withStores": False},
-                "query": "query SearchResources($query:String,$pageNum:Int,$resourcesPerPage:Int,$sortType:String,$debug:Boolean,$inputFacets:[String],$withFacets:[String],$withHighlights:Boolean,$withStores:Boolean){searchResources(query:$query,pageNum:$pageNum,resourcesPerPage:$resourcesPerPage,sortType:$sortType,debug:$debug,inputFacets:$inputFacets,withFacets:$withFacets,withHighlights:$withHighlights,withStores:$withStores){totalCount resources{id name pricing{nonTransferableLicenses{price}}rating{averageRating count}}}}",
-            },
+            json={"query": "{ __schema { queryType { fields { name args { name type { name kind ofType { name kind } } } } } } }"},
             timeout=30,
         )
-        return resp.status_code, resp.text[:2000]
+        return resp.status_code, resp.text[:8000]
 
     try:
-        status_code, body = await loop.run_in_executor(None, _try_graphql)
-        result["graphql"] = {"http_status": status_code, "response_preview": body}
-        result["status"] = "graphql_tested"
+        status_code, body = await loop.run_in_executor(None, _try_introspect)
+        result["graphql_schema"] = {"http_status": status_code, "fields": body}
+        result["status"] = "schema_fetched"
     except Exception as e:
-        result["graphql"] = {"status": "error", "error": str(e)}
+        result["graphql_schema"] = {"status": "error", "error": str(e)}
 
     result.setdefault("status", "all_failed")
     return result
