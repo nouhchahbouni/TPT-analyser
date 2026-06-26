@@ -319,6 +319,16 @@ async def export_csv(q: str = "", category: str = ""):
 
 # ─────────────────────────────── Health ───────────────────────────────────────
 
+@app.get("/api/debug/env")
+async def debug_env():
+    key = os.getenv("SCRAPINGBEE_API_KEY", "")
+    return {
+        "key_set": bool(key),
+        "key_length": len(key),
+        "key_preview": key[:6] + "..." if key else "EMPTY",
+        "all_vars": [k for k in os.environ.keys() if "SCRAPING" in k or "BEE" in k],
+    }
+
 @app.get("/api/health")
 async def health():
     db_ok = False
