@@ -36,6 +36,20 @@ STORES = [
     "lucky-little-learners",
 ]
 
+CATEGORY_PRODUCT_COUNTS = {
+    "math": 847, "ela-english-language-arts": 1203, "science": 621,
+    "social-studies-history": 589, "social-emotional-learning": 432,
+    "back-to-school": 389, "teacher-tools": 512, "classroom-decor": 774,
+    "special-education": 318, "foreign-language": 245,
+}
+
+CATEGORY_MOMENTUM = {
+    "math": 12, "ela-english-language-arts": 9, "science": 5,
+    "social-studies-history": 4, "social-emotional-learning": 18,
+    "back-to-school": 22, "teacher-tools": 6, "classroom-decor": 5,
+    "special-education": 7, "foreign-language": 4,
+}
+
 CATEGORY_ICONS = {
     "math": "📐",
     "ela-english-language-arts": "📖",
