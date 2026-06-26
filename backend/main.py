@@ -362,63 +362,18 @@ async def export_csv(q: str = "", category: str = ""):
 
 @app.get("/api/debug/tpt")
 async def debug_tpt(q: str = "math"):
-    """Test TPT data extraction and dump raw Apollo product structure."""
-    import re as _re
+    """Test TPT apolloState extraction."""
     loop = asyncio.get_event_loop()
-
-    result = {"query": q}
-
     try:
         html = await loop.run_in_executor(None, sc._fetch_tpt_search, q)
-        has_apollo = "apolloState" in html
-        result["html_length"] = len(html)
-        result["has_apolloState"] = has_apollo
-
-        if not has_apollo:
-            result["status"] = "no_apollo"
-            return result
-
-        # Parse apolloState
-        m = _re.search(r'"apolloState"\s*:\s*(\{)', html)
-        start = m.start(1)
-        depth, end = 0, start
-        for i in range(start, min(start + 5_000_000, len(html))):
-            c = html[i]
-            if c == '{': depth += 1
-            elif c == '}':
-                depth -= 1
-                if depth == 0:
-                    end = i + 1
-                    break
-        apollo = json.loads(html[start:end])
-        root = apollo.get("ROOT_QUERY", {})
-        search_key = next((k for k in root if k.startswith("searchResources(")), None)
-        result["search_key_found"] = bool(search_key)
-
-        if search_key:
-            refs = root[search_key].get("resources", [])
-            result["total_refs"] = len(refs)
-            if refs:
-                first_ref = refs[0].get("__ref")
-                raw = apollo.get(first_ref, {})
-                result["raw_keys"] = list(raw.keys())
-                result["raw_product"] = {k: v for k, v in list(raw.items())[:30]}
-                # Also show what refs resolve to
-                for k, v in list(raw.items())[:30]:
-                    if isinstance(v, dict) and "__ref" in v:
-                        resolved = apollo.get(v["__ref"], {})
-                        result[f"resolved_{k}"] = resolved
-
         products = sc._extract_apollo_products(html)
-        result["products_found"] = len(products)
-        result["sample"] = products[:2]
-        result["status"] = "success" if products else "parsed_but_empty"
-
+        return {
+            "status": "success" if products else "no_products",
+            "products_found": len(products),
+            "sample": products[:3],
+        }
     except Exception as e:
-        result["status"] = "error"
-        result["error"] = str(e)
-
-    return result
+        return {"status": "error", "error": str(e)}
 
 
 @app.get("/api/debug/algolia")
