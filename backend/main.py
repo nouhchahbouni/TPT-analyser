@@ -326,7 +326,8 @@ async def debug_env():
         "key_set": bool(key),
         "key_length": len(key),
         "key_preview": key[:6] + "..." if key else "EMPTY",
-        "all_vars": [k for k in os.environ.keys() if "SCRAPING" in k or "BEE" in k],
+        "port": os.getenv("PORT", "not set"),
+        "all_env_keys": sorted(os.environ.keys()),
     }
 
 @app.get("/api/health")
