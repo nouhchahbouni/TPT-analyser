@@ -322,53 +322,31 @@ async def export_csv(q: str = "", category: str = ""):
 @app.get("/api/debug/scrape")
 async def debug_scrape(q: str = "math"):
     import scraper as sc
+    import re as _re
     url = f"https://www.teacherspayteachers.com/browse?search={q}&order=Most+Reviewed"
     try:
         html = sc._fetch_html(url)
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(html, "html.parser")
-        has_next_data = bool(soup.find("script", id="__NEXT_DATA__"))
-        json_ld = sc._extract_json_ld(soup)
-        next_products = sc._extract_next_data(soup)
-        cards = soup.select("[data-testid='product-card']") or soup.select(".ProductRowCard")
-        state_products = sc._extract_tpt_state(soup)
-        inline = sc._extract_inline_json(soup)
-        scripts = soup.find_all("script")
-        script_keywords = []
-        for s in scripts:
-            t = s.string or ""
-            if any(k in t for k in ["resource", "product", "seller", "price", "rating"]):
-                script_keywords.append({"len": len(t), "preview": t[:200]})
-        # Extract state keys
-        state_keys = []
-        state_preview = ""
-        for script in soup.find_all("script"):
-            text = script.string or ""
-            if "var state" in text and len(text) > 1000:
-                m = re.search(r'var state\s*=\s*(\{)', text)
-                if m:
-                    state_preview = text[m.start():m.start()+2000]
-                    try:
-                        import json as _json
-                        raw = text[m.start()+len("var state = "):]
-                        depth, end = 0, 0
-                        for i, ch in enumerate(raw):
-                            if ch == '{': depth += 1
-                            elif ch == '}':
-                                depth -= 1
-                                if depth == 0:
-                                    end = i + 1
-                                    break
-                        obj = _json.loads(raw[:end])
-                        state_keys = list(obj.keys())
-                    except Exception as e:
-                        state_keys = [f"parse_error: {e}"]
+        # Search for product-like patterns in raw HTML
+        patterns = {
+            "thumbnailUrl": len(_re.findall(r'thumbnailUrl', html)),
+            "objectID": len(_re.findall(r'objectID', html)),
+            "sellerName": len(_re.findall(r'sellerName', html)),
+            "ratingCount": len(_re.findall(r'ratingCount', html)),
+            "isBestSeller": len(_re.findall(r'isBestSeller', html)),
+            "resourceId": len(_re.findall(r'resourceId', html)),
+            "canonicalSlug": len(_re.findall(r'canonicalSlug', html)),
+        }
+        # Find context around first match
+        sample = ""
+        for key in ["thumbnailUrl", "sellerName", "canonicalSlug"]:
+            m = _re.search(key, html)
+            if m:
+                sample = html[max(0, m.start()-100):m.start()+500]
                 break
         return {
             "html_length": len(html),
-            "tpt_state_count": len(state_products),
-            "state_top_keys": state_keys,
-            "state_preview": state_preview[:1000],
+            "patterns_found": patterns,
+            "sample_context": sample[:800],
         }
     except Exception as e:
         return {"error": str(e)}
