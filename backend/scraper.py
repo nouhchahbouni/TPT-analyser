@@ -641,67 +641,46 @@ def _extract_apollo_products(html: str) -> List[Dict]:
         if not resource:
             continue
 
-        title = resource.get("name") or resource.get("title") or ""
+        title = resource.get("title") or resource.get("name") or ""
         if not title:
             continue
 
-        # Extract price from nested pricing object
+        # Price — inline in pricing object (not a ref)
         price = 0.0
-        pricing_ref = resource.get("pricing", {})
-        if isinstance(pricing_ref, dict):
-            pricing_key = pricing_ref.get("__ref")
-            if pricing_key:
-                pricing_obj = apollo.get(pricing_key, {})
-            else:
-                pricing_obj = pricing_ref
-            # nonTransferableLicenses has standard single-license price
-            ntl = pricing_obj.get("nonTransferableLicenses", {})
+        pricing = resource.get("pricing", {})
+        if isinstance(pricing, dict):
+            ntl = pricing.get("nonTransferableLicenses", {})
             if isinstance(ntl, dict):
-                ntl_key = ntl.get("__ref")
-                if ntl_key:
-                    ntl = apollo.get(ntl_key, {})
                 price = float(ntl.get("price", 0) or 0)
 
-        # Rating
-        rating_ref = resource.get("rating", {})
-        rating = 0.0
-        review_count = 0
-        if isinstance(rating_ref, dict):
-            rating_key = rating_ref.get("__ref")
-            if rating_key:
-                rating_obj = apollo.get(rating_key, {})
-            else:
-                rating_obj = rating_ref
-            rating = float(rating_obj.get("averageRating", 0) or 0)
-            review_count = int(rating_obj.get("count", 0) or 0)
+        # Rating — directly on resource
+        rating = float(resource.get("overallQualityScore", 0) or 0)
+        review_count = int(resource.get("totalEvaluations", 0) or 0)
 
-        # Thumbnail
+        # Thumbnail — assets.thumbnails[0].largeUrl
         thumb = ""
-        thumbs = resource.get("thumbnails", []) or resource.get("previewImages", [])
-        if isinstance(thumbs, list) and thumbs:
-            first = thumbs[0]
-            if isinstance(first, dict):
-                thumb_key = first.get("__ref")
-                if thumb_key:
-                    thumb_obj = apollo.get(thumb_key, {})
-                    thumb = thumb_obj.get("url", "") or thumb_obj.get("thumbnailUrl", "")
-                else:
-                    thumb = first.get("url", "") or first.get("thumbnailUrl", "")
+        assets = resource.get("assets", {})
+        if isinstance(assets, dict):
+            thumbs = assets.get("thumbnails", [])
+            if isinstance(thumbs, list) and thumbs:
+                first = thumbs[0]
+                if isinstance(first, dict):
+                    thumb = first.get("largeUrl") or first.get("originalUrl") or ""
 
-        # Store
-        store_ref = resource.get("store", {}) or resource.get("seller", {})
+        # Author/Store — author.__ref → ResourceAuthor:xxx
         shop_name = ""
         shop_slug = ""
-        if isinstance(store_ref, dict):
-            store_key = store_ref.get("__ref")
-            if store_key:
-                store_obj = apollo.get(store_key, {})
-                shop_name = store_obj.get("name", "") or store_obj.get("storeName", "")
-                shop_slug = store_obj.get("urlName", "") or store_obj.get("storeUrlName", "")
+        author_ref = resource.get("author", {})
+        if isinstance(author_ref, dict):
+            author_key = author_ref.get("__ref")
+            if author_key:
+                author_obj = apollo.get(author_key, {})
+                shop_name = author_obj.get("name", "")
+                shop_slug = author_obj.get("slug", "")
 
-        # URL / ID
-        rid = resource.get("id") or resource.get("resourceId") or ref_key.split(":")[-1]
-        slug = resource.get("slug") or resource.get("canonicalSlug") or ""
+        # URL
+        slug = resource.get("canonicalSlug") or resource.get("slug") or ""
+        rid = resource.get("id") or ref_key.split(":")[-1]
         if slug:
             url = f"https://www.teacherspayteachers.com/Product/{slug}"
         else:
