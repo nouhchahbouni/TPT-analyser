@@ -9,6 +9,7 @@ from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 import io
 import csv
+import json
 from typing import Optional, List
 from datetime import datetime
 
@@ -385,7 +386,39 @@ async def debug_tpt(q: str = "math"):
     except Exception as e:
         result["html_fetch"] = {"status": "error", "error": str(e)}
 
-    # Test 2: GraphQL introspection — find the real field names
+    # Test 2: dump raw Apollo keys for first product to understand structure
+    if result.get("html_fetch", {}).get("has_apolloState"):
+        try:
+            html = await loop.run_in_executor(None, sc._fetch_tpt_search, q)
+            import re as _re
+            m = _re.search(r'"apolloState"\s*:\s*(\{)', html)
+            if m:
+                start = m.start(1)
+                depth = 0
+                end = start
+                for i in range(start, min(start + 5_000_000, len(html))):
+                    c = html[i]
+                    if c == '{': depth += 1
+                    elif c == '}':
+                        depth -= 1
+                        if depth == 0:
+                            end = i + 1
+                            break
+                apollo = json.loads(html[start:end])
+                root = apollo.get("ROOT_QUERY", {})
+                search_key = next((k for k in root if k.startswith("searchResources(")), None)
+                if search_key:
+                    refs = root[search_key].get("resources", [])
+                    if refs:
+                        first_ref = refs[0].get("__ref")
+                        if first_ref:
+                            raw_product = apollo.get(first_ref, {})
+                            result["raw_product_keys"] = list(raw_product.keys())
+                            result["raw_product_sample"] = {k: v for k, v in list(raw_product.items())[:20]}
+        except Exception as e:
+            result["debug_error"] = str(e)
+
+    # Test 3: GraphQL introspection — find the real field names
     def _try_introspect():
         resp = _req.post(
             "https://www.teacherspayteachers.com/graph/graphql?opname=Introspect",
