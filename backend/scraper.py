@@ -546,34 +546,43 @@ def _fetch_tpt_search(keyword: str) -> str:
     url = f"https://www.teacherspayteachers.com/browse?search={requests.utils.quote(keyword)}"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
+        "Cache-Control": "no-cache",
+        "Pragma": "no-cache",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Upgrade-Insecure-Requests": "1",
     }
     try:
-        resp = requests.get(url, headers=headers, timeout=30)
+        resp = requests.get(url, headers=headers, timeout=30, allow_redirects=True)
         if resp.status_code == 200 and "apolloState" in resp.text:
             print(f"[scraper] ✅ Direct TPT fetch succeeded for '{keyword}'")
             return resp.text
-        print(f"[scraper] Direct fetch status={resp.status_code}, trying ScrapingBee...")
+        print(f"[scraper] Direct fetch status={resp.status_code}, len={len(resp.text)}, has_apollo={'apolloState' in resp.text}")
     except Exception as e:
-        print(f"[scraper] Direct fetch failed: {e}, trying ScrapingBee...")
+        print(f"[scraper] Direct fetch failed: {e}")
 
     if not SCRAPINGBEE_KEY:
-        raise RuntimeError("Direct fetch blocked and SCRAPINGBEE_API_KEY not set")
+        raise RuntimeError("TPT fetch blocked by Cloudflare and SCRAPINGBEE_API_KEY not set")
 
-    resp = requests.get(
-        SCRAPINGBEE_URL,
-        params={
-            "api_key": SCRAPINGBEE_KEY,
-            "url": url,
-            "render_js": "false",
-            "block_ads": "true",
-        },
-        timeout=60,
-    )
-    resp.raise_for_status()
-    return resp.text
+    try:
+        resp = requests.get(
+            SCRAPINGBEE_URL,
+            params={
+                "api_key": SCRAPINGBEE_KEY,
+                "url": url,
+                "render_js": "false",
+                "block_ads": "true",
+            },
+            timeout=60,
+        )
+        resp.raise_for_status()
+        return resp.text
+    except Exception as e:
+        raise RuntimeError(f"Both direct fetch and ScrapingBee failed: {e}")
 
 
 def _extract_apollo_products(html: str) -> List[Dict]:
