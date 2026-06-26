@@ -1,48 +1,43 @@
-"""TPT Analyzer — Playwright Scraper"""
-import asyncio
+"""TPT Analyzer — ScrapingBee Scraper"""
+import os
 import re
+import json
 import random
+import asyncio
+import requests
 from datetime import datetime
 from typing import List, Dict, Any
+from bs4 import BeautifulSoup
 
-try:
-    from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
-    PLAYWRIGHT_AVAILABLE = True
-except ImportError:
-    PLAYWRIGHT_AVAILABLE = False
-
-from database import upsert_product, set_cache, is_cache_valid
 from calculator import enrich_product
 
+SCRAPINGBEE_KEY = os.getenv("SCRAPINGBEE_API_KEY", "")
+SCRAPINGBEE_URL = "https://app.scrapingbee.com/api/v1/"
 
 CATEGORIES = [
-    "math",
-    "ela-english-language-arts",
-    "science",
-    "social-studies-history",
-    "social-emotional-learning",
-    "back-to-school",
-    "teacher-tools",
-    "classroom-decor",
-    "special-education",
-    "foreign-language",
+    "math", "ela-english-language-arts", "science",
+    "social-studies-history", "social-emotional-learning",
+    "back-to-school", "teacher-tools", "classroom-decor",
+    "special-education", "foreign-language",
 ]
-
 STORES = [
-    "the-moffatt-girls",
-    "deanna-jump",
-    "rachel-lynette",
-    "fun-in-fifth-grade",
-    "lucky-little-learners",
+    "the-moffatt-girls", "deanna-jump", "rachel-lynette",
+    "fun-in-fifth-grade", "lucky-little-learners",
+    "lindsay-bowden", "appletastic-learning",
+    "the-stellar-teacher-company",
 ]
-
+CATEGORY_ICONS = {
+    "math": "📐", "ela-english-language-arts": "📖", "science": "🔬",
+    "social-studies-history": "🌍", "social-emotional-learning": "💚",
+    "back-to-school": "🎒", "teacher-tools": "🛠️", "classroom-decor": "🎨",
+    "special-education": "⭐", "foreign-language": "🌐",
+}
 CATEGORY_PRODUCT_COUNTS = {
     "math": 847, "ela-english-language-arts": 1203, "science": 621,
     "social-studies-history": 589, "social-emotional-learning": 432,
     "back-to-school": 389, "teacher-tools": 512, "classroom-decor": 774,
     "special-education": 318, "foreign-language": 245,
 }
-
 CATEGORY_MOMENTUM = {
     "math": 12, "ela-english-language-arts": 9, "science": 5,
     "social-studies-history": 4, "social-emotional-learning": 18,
@@ -50,319 +45,314 @@ CATEGORY_MOMENTUM = {
     "special-education": 7, "foreign-language": 4,
 }
 
-CATEGORY_ICONS = {
-    "math": "📐",
-    "ela-english-language-arts": "📖",
-    "science": "🔬",
-    "social-studies-history": "🌍",
-    "social-emotional-learning": "💚",
-    "back-to-school": "🎒",
-    "teacher-tools": "🛠️",
-    "classroom-decor": "🎨",
-    "special-education": "⭐",
-    "foreign-language": "🌐",
-}
 
+# ──────────────────────────────────────────────────────────────────────────────
+# ScrapingBee fetch
+# ──────────────────────────────────────────────────────────────────────────────
 
-def generate_mock_products(keyword: str, count: int = 20) -> List[Dict[str, Any]]:
-    """Generate realistic mock products for demo purposes."""
-    categories = ["Math", "ELA", "Science", "Social Studies", "SEL", "Back to School", "Teacher Tools"]
-    grades = ["K-2", "3-5", "6-8", "9-12", "PreK", "All Grades"]
-    shops = [
-        ("The Moffatt Girls", "the-moffatt-girls"),
-        ("Deanna Jump", "deanna-jump"),
-        ("Rachel Lynette", "rachel-lynette"),
-        ("Lucky Little Learners", "lucky-little-learners"),
-        ("Fun in Fifth Grade", "fun-in-fifth-grade"),
-        ("The Curriculum Corner", "the-curriculum-corner"),
-        ("Reagan Tunstall", "reagan-tunstall"),
-        ("Jennifer Findley", "jennifer-findley"),
-    ]
-
-    title_templates = [
-        "{kw} Activities Bundle | Printable Worksheets",
-        "{kw} Unit Study | Complete Curriculum Pack",
-        "{kw} Task Cards | Boom Cards Digital",
-        "Interactive {kw} Notebook | Foldables",
-        "{kw} Assessment Pack | Tests & Quizzes",
-        "{kw} Centers & Games | Differentiated",
-        "{kw} Anchor Charts | Posters & Display",
-        "Digital {kw} Activities | Google Slides",
-        "{kw} Lesson Plans | Full Year Bundle",
-        "{kw} Exit Tickets | Quick Checks",
-    ]
-
-    products = []
-    kw_display = keyword.replace("-", " ").title()
-
-    for i in range(count):
-        shop_name, shop_slug = random.choice(shops)
-        cat = random.choice(categories)
-        grade = random.choice(grades)
-        title_tmpl = random.choice(title_templates)
-        title = title_tmpl.format(kw=kw_display)
-
-        reviews_total = random.randint(10, 3000)
-        reviews_30j = random.randint(0, max(1, reviews_total // 8))
-        favoris = random.randint(5, reviews_total * 2)
-        downloads = random.randint(reviews_total, reviews_total * 15)
-        has_bestseller = random.random() < 0.2
-        price = round(random.choice([1.50, 2.00, 3.00, 4.00, 5.00, 6.00, 7.50, 8.00, 10.00, 12.00, 15.00, 20.00]), 2)
-        rating = round(random.uniform(3.5, 5.0), 1)
-        desc_words = random.randint(100, 500)
-        age_years = random.uniform(0.5, 8)
-        pub_year = datetime.now().year - int(age_years)
-        pub_month = random.randint(1, 12)
-        date_published = f"{pub_year}-{pub_month:02d}-01"
-
-        product_id = abs(hash(f"{keyword}-{i}")) % 1000000
-        url = f"https://www.teacherspayteachers.com/Product/{title.lower().replace(' ', '-')[:50]}-{product_id}"
-
-        thumbnails = [
-            "https://ecdn.teacherspayteachers.com/thumbitem/placeholder-math.jpg",
-            "https://ecdn.teacherspayteachers.com/thumbitem/placeholder-ela.jpg",
-        ]
-
-        p = {
+def _fetch_html(url: str) -> str:
+    """Fetch a URL via ScrapingBee and return raw HTML."""
+    if not SCRAPINGBEE_KEY:
+        raise RuntimeError("SCRAPINGBEE_API_KEY not set")
+    resp = requests.get(
+        SCRAPINGBEE_URL,
+        params={
+            "api_key": SCRAPINGBEE_KEY,
             "url": url,
-            "title": title,
+            "render_js": "true",
+            "wait": "3000",
+            "block_ads": "true",
+            "block_resources": "false",
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.text
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TPT HTML parser
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _parse_price(text: str) -> float:
+    m = re.search(r"[\d]+\.[\d]{2}|[\d]+", (text or "").replace(",", ""))
+    return float(m.group()) if m else 0.0
+
+def _parse_int(text: str) -> int:
+    m = re.search(r"[\d,]+", (text or "").replace(",", ""))
+    return int(m.group().replace(",", "")) if m else 0
+
+def _parse_rating(text: str) -> float:
+    m = re.search(r"([\d.]+)\s*out\s*of\s*[\d.]+|([\d.]+)\s*star", (text or ""), re.I)
+    if m:
+        return float(m.group(1) or m.group(2))
+    m = re.search(r"[\d.]+", text or "")
+    return float(m.group()) if m else 0.0
+
+def _extract_json_ld(soup: BeautifulSoup) -> List[Dict]:
+    """Try to extract product data from JSON-LD schema markup."""
+    products = []
+    for tag in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(tag.string or "")
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                if item.get("@type") in ("Product", "ItemList"):
+                    if item.get("@type") == "ItemList":
+                        for el in item.get("itemListElement", []):
+                            p = el.get("item", el)
+                            products.append(_normalize_jsonld(p))
+                    else:
+                        products.append(_normalize_jsonld(item))
+        except Exception:
+            continue
+    return [p for p in products if p.get("title")]
+
+def _normalize_jsonld(item: dict) -> dict:
+    offer = item.get("offers", {})
+    if isinstance(offer, list):
+        offer = offer[0] if offer else {}
+    agg = item.get("aggregateRating", {})
+    return {
+        "title": item.get("name", ""),
+        "url": item.get("url", ""),
+        "price": _parse_price(str(offer.get("price", "0"))),
+        "rating": float(agg.get("ratingValue", 0)),
+        "reviews_total": int(agg.get("reviewCount", 0)),
+        "thumbnail": (item.get("image", [""])[0] if isinstance(item.get("image"), list)
+                      else item.get("image", "")),
+        "has_bestseller": False,
+        "has_image": bool(item.get("image")),
+    }
+
+def _parse_search_page(html: str, keyword: str) -> List[Dict]:
+    """Parse TPT search results page HTML → list of product dicts."""
+    soup = BeautifulSoup(html, "html.parser")
+
+    # Try JSON-LD first (cleanest data)
+    products = _extract_json_ld(soup)
+    if products:
+        return _finalize(products, keyword)
+
+    # Fallback: parse product cards from HTML
+    cards = (
+        soup.select("[data-testid='product-card']") or
+        soup.select(".ProductRowCard") or
+        soup.select("[class*='ProductCard']") or
+        soup.select("li[class*='product']") or
+        soup.select("article[class*='product']")
+    )
+
+    for card in cards[:30]:
+        try:
+            # Title + URL
+            link = card.find("a", href=re.compile(r"/Product/"))
+            if not link:
+                continue
+            title = link.get_text(strip=True) or link.get("title", "")
+            url = link.get("href", "")
+            if url and not url.startswith("http"):
+                url = "https://www.teacherspayteachers.com" + url
+
+            # Price
+            price_el = (card.find(attrs={"data-testid": "price"}) or
+                        card.find(class_=re.compile(r"[Pp]rice")))
+            price = _parse_price(price_el.get_text() if price_el else "")
+
+            # Rating
+            rating_el = card.find(attrs={"aria-label": re.compile(r"star|rating", re.I)})
+            rating = _parse_rating(rating_el.get("aria-label", "") if rating_el else "")
+
+            # Reviews
+            review_el = (card.find(attrs={"data-testid": "rating-count"}) or
+                         card.find(class_=re.compile(r"[Rr]ating[Cc]ount|[Rr]eview")))
+            reviews = _parse_int(review_el.get_text() if review_el else "")
+
+            # Shop
+            shop_el = (card.find(attrs={"data-testid": "store-name"}) or
+                       card.find(class_=re.compile(r"[Ss]tore|[Ss]eller|[Ss]hop")))
+            shop_name = shop_el.get_text(strip=True) if shop_el else ""
+
+            # Thumbnail
+            img = card.find("img")
+            thumbnail = (img.get("src") or img.get("data-src") or "") if img else ""
+
+            # Best Seller badge
+            bs = bool(card.find(class_=re.compile(r"[Bb]est[Ss]eller|[Bb]adge")))
+
+            if not title:
+                continue
+
+            products.append({
+                "title": title[:200],
+                "url": url,
+                "price": price,
+                "rating": rating,
+                "reviews_total": reviews,
+                "thumbnail": thumbnail,
+                "shop_name": shop_name,
+                "has_bestseller": bs,
+                "has_image": bool(thumbnail),
+            })
+        except Exception:
+            continue
+
+    return _finalize(products, keyword)
+
+def _finalize(products: List[Dict], keyword: str) -> List[Dict]:
+    """Add missing fields + enrich with calculated scores."""
+    result = []
+    for p in products:
+        if not p.get("title"):
+            continue
+        p.setdefault("reviews_30j", max(0, int(p.get("reviews_total", 0) * random.uniform(0.03, 0.18))))
+        p.setdefault("favoris", int(p.get("reviews_total", 0) * random.uniform(1.5, 4)))
+        p.setdefault("downloads", int(p.get("reviews_total", 0) * random.uniform(8, 15)))
+        p.setdefault("desc_words", random.randint(150, 400))
+        p.setdefault("category", keyword.replace("-", " ").title())
+        p.setdefault("grade_level", "K-5")
+        p.setdefault("shop_url", "")
+        p.setdefault("date_published", "")
+        p.setdefault("thumbnail", "")
+        p.setdefault("shop_name", "")
+        p["keyword_searched"] = keyword
+        p["scraped_at"] = datetime.now().isoformat()
+        result.append(enrich_product(p, keyword))
+    return result
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Public scrape functions
+# ──────────────────────────────────────────────────────────────────────────────
+
+def scrape_keyword_sync(keyword: str, count: int = 30) -> List[Dict]:
+    """Scrape TPT search for a keyword. Returns enriched product list."""
+    url = f"https://www.teacherspayteachers.com/browse?search={keyword.replace(' ', '+')}&order=Most+Reviewed"
+    try:
+        html = _fetch_html(url)
+        products = _parse_search_page(html, keyword)
+        if products:
+            print(f"[scraper] ✅ Scraped {len(products)} real products for '{keyword}'")
+            return products
+    except Exception as e:
+        print(f"[scraper] ⚠️ ScrapingBee failed for '{keyword}': {e}")
+    # Fallback to mock
+    return generate_mock_products(keyword, count)
+
+def scrape_store_sync(store_name: str, count: int = 20) -> List[Dict]:
+    """Scrape TPT store page."""
+    url = f"https://www.teacherspayteachers.com/Store/{store_name}?order=Most+Reviewed"
+    try:
+        html = _fetch_html(url)
+        products = _parse_search_page(html, store_name)
+        for p in products:
+            p["shop_name"] = store_name.replace("-", " ").title()
+            p["shop_url"] = f"https://www.teacherspayteachers.com/Store/{store_name}"
+        if products:
+            return products
+    except Exception as e:
+        print(f"[scraper] Store scrape failed for '{store_name}': {e}")
+    mock = generate_mock_products(store_name, count)
+    for p in mock:
+        p["shop_name"] = store_name.replace("-", " ").title()
+        p["shop_url"] = f"https://www.teacherspayteachers.com/Store/{store_name}"
+    return mock
+
+async def scrape_keyword(keyword: str, use_cache: bool = True) -> List[Dict]:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, scrape_keyword_sync, keyword)
+
+async def scrape_store(store_name: str) -> List[Dict]:
+    loop = asyncio.get_event_loop()
+    return await loop.run_in_executor(None, scrape_store_sync, store_name)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Mock data (fallback when ScrapingBee unavailable)
+# ──────────────────────────────────────────────────────────────────────────────
+
+SHOPS = [
+    ("The Moffatt Girls", "the-moffatt-girls"),
+    ("Deanna Jump", "deanna-jump"),
+    ("Rachel Lynette", "rachel-lynette"),
+    ("Lucky Little Learners", "lucky-little-learners"),
+    ("Fun in Fifth Grade", "fun-in-fifth-grade"),
+    ("The Curriculum Corner", "the-curriculum-corner"),
+    ("Reagan Tunstall", "reagan-tunstall"),
+    ("Jennifer Findley", "jennifer-findley"),
+]
+CAT_DISPLAY = ["Math","ELA","Science","Social Studies","SEL","Back to School","Teacher Tools","Classroom Decor"]
+GRADES = ["K-2","3-5","6-8","9-12","PreK","All Grades"]
+PRICES = [1.50,2.00,3.00,4.00,5.00,6.00,7.50,8.00,10.00,12.00,15.00,20.00]
+TITLE_TPLS = [
+    "{kw} Activities Bundle | Printable Worksheets",
+    "{kw} Unit Study | Complete Curriculum Pack",
+    "{kw} Task Cards | Boom Cards Digital",
+    "Interactive {kw} Notebook | Foldables",
+    "{kw} Assessment Pack | Tests & Quizzes",
+    "{kw} Centers & Games | Differentiated",
+    "{kw} Lesson Plans | Full Year Bundle",
+    "{kw} Exit Tickets | Quick Checks",
+]
+
+def generate_mock_products(keyword: str, count: int = 20) -> List[Dict]:
+    rng = random.Random(abs(hash(keyword)) % (2**31))
+    kw = keyword.replace("-", " ").title()
+    products = []
+    for i in range(count):
+        shop_name, shop_slug = rng.choice(SHOPS)
+        rt = rng.randint(10, 3000)
+        r30 = rng.randint(0, max(1, rt // 8))
+        price = rng.choice(PRICES)
+        rating = round(rng.uniform(3.5, 5.0), 1)
+        bs = rng.random() < 0.2
+        age_y = rng.uniform(0.5, 8)
+        pub_year = datetime.now().year - int(age_y)
+        pub_month = rng.randint(1, 12)
+        pid = abs(hash(f"{keyword}-{i}")) % 9999999
+        p = {
+            "id": pid,
+            "url": f"https://www.teacherspayteachers.com/Product/{kw.lower().replace(' ','-')}-{pid}",
+            "title": rng.choice(TITLE_TPLS).format(kw=kw),
             "price": price,
             "rating": rating,
-            "reviews_total": reviews_total,
-            "reviews_30j": reviews_30j,
-            "favoris": favoris,
-            "downloads": downloads,
-            "has_bestseller": has_bestseller,
+            "reviews_total": rt,
+            "reviews_30j": r30,
+            "favoris": rng.randint(5, rt * 2),
+            "downloads": rng.randint(rt, rt * 15),
+            "has_bestseller": bs,
             "has_image": True,
-            "desc_words": desc_words,
-            "category": cat,
-            "grade_level": grade,
+            "desc_words": rng.randint(100, 500),
+            "category": rng.choice(CAT_DISPLAY),
+            "grade_level": rng.choice(GRADES),
             "shop_name": shop_name,
             "shop_url": f"https://www.teacherspayteachers.com/Store/{shop_slug}",
-            "date_published": date_published,
-            "thumbnail": f"https://picsum.photos/seed/{product_id}/120/90",
+            "date_published": f"{pub_year}-{pub_month:02d}-01",
+            "thumbnail": f"https://picsum.photos/seed/{pid}/120/90",
             "keyword_searched": keyword,
             "scraped_at": datetime.now().isoformat(),
         }
         products.append(enrich_product(p, keyword))
-
-    return products
-
-
-async def scrape_keyword(keyword: str, use_cache: bool = True) -> List[Dict[str, Any]]:
-    """Scrape TPT for a keyword. Falls back to mock data on failure."""
-    if use_cache and await is_cache_valid(keyword):
-        from database import get_products
-        cached = await get_products(q=keyword, limit=50)
-        if cached:
-            return [enrich_product(p, keyword) for p in cached]
-
-    if not PLAYWRIGHT_AVAILABLE:
-        return await _save_and_return(generate_mock_products(keyword), keyword)
-
-    try:
-        products = await _playwright_scrape_keyword(keyword)
-        if not products:
-            products = generate_mock_products(keyword)
-    except Exception as e:
-        print(f"[scraper] Playwright failed for '{keyword}': {e}")
-        products = generate_mock_products(keyword)
-
-    return await _save_and_return(products, keyword)
-
-
-async def _save_and_return(products: List[Dict], keyword: str) -> List[Dict]:
-    """Save products to DB and update cache."""
-    for p in products:
-        try:
-            pid = await upsert_product(p)
-            p["id"] = pid
-        except Exception as e:
-            print(f"[scraper] DB insert error: {e}")
-    await set_cache(keyword)
-    return products
-
-
-async def _playwright_scrape_keyword(keyword: str) -> List[Dict[str, Any]]:
-    """Actual Playwright scraping logic."""
-    url = f"https://www.teacherspayteachers.com/browse?search={keyword.replace(' ', '+')}&order=Most+Reviewed"
-    products = []
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--no-sandbox", "--disable-dev-shm-usage"])
-        page = await browser.new_page(user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ))
-
-        try:
-            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
-
-            cards = await page.query_selector_all("[data-testid='product-card'], .ProductRowCard, .ProductListingCard")
-
-            for card in cards[:30]:
-                try:
-                    product = await _extract_card_data(card, keyword)
-                    if product:
-                        products.append(enrich_product(product, keyword))
-                except Exception:
-                    continue
-
-        finally:
-            await browser.close()
-
-    return products
-
-
-async def _extract_card_data(card, keyword: str) -> Dict[str, Any]:
-    """Extract data from a single product card element."""
-    title_el = await card.query_selector("h2, h3, [data-testid='product-title'], .product-title")
-    if not title_el:
-        return None
-    title = (await title_el.inner_text()).strip()
-    if not title:
-        return None
-
-    link_el = await card.query_selector("a[href*='/Product/']")
-    url = ""
-    if link_el:
-        url = await link_el.get_attribute("href") or ""
-        if url and not url.startswith("http"):
-            url = "https://www.teacherspayteachers.com" + url
-
-    price_el = await card.query_selector("[data-testid='price'], .price, .ProductCard__price")
-    price = 0.0
-    if price_el:
-        price_text = await price_el.inner_text()
-        m = re.search(r"[\d.]+", price_text.replace(",", ""))
-        if m:
-            price = float(m.group())
-
-    rating_el = await card.query_selector("[aria-label*='rating'], [aria-label*='star'], .rating")
-    rating = 0.0
-    if rating_el:
-        label = await rating_el.get_attribute("aria-label") or ""
-        m = re.search(r"([\d.]+)", label)
-        if m:
-            rating = float(m.group(1))
-
-    reviews_el = await card.query_selector("[data-testid='rating-count'], .rating-count")
-    reviews_total = 0
-    if reviews_el:
-        rt = await reviews_el.inner_text()
-        m = re.search(r"[\d,]+", rt)
-        if m:
-            reviews_total = int(m.group().replace(",", ""))
-
-    shop_el = await card.query_selector("[data-testid='store-name'], .store-name, .seller-name")
-    shop_name = ""
-    shop_url = ""
-    if shop_el:
-        shop_name = (await shop_el.inner_text()).strip()
-        shop_link = await shop_el.query_selector("a")
-        if shop_link:
-            shop_url = await shop_link.get_attribute("href") or ""
-
-    img_el = await card.query_selector("img")
-    thumbnail = ""
-    if img_el:
-        thumbnail = await img_el.get_attribute("src") or ""
-
-    bestseller_el = await card.query_selector("[data-testid='bestseller'], .badge-bestseller")
-    has_bestseller = bestseller_el is not None
-
-    return {
-        "url": url or f"https://www.teacherspayteachers.com/Product/{title[:30].lower().replace(' ', '-')}",
-        "title": title,
-        "price": price,
-        "rating": rating,
-        "reviews_total": reviews_total,
-        "reviews_30j": max(0, int(reviews_total * random.uniform(0.02, 0.15))),
-        "favoris": int(reviews_total * random.uniform(2, 5)),
-        "downloads": int(reviews_total * random.uniform(8, 15)),
-        "has_bestseller": has_bestseller,
-        "has_image": bool(thumbnail),
-        "desc_words": random.randint(150, 400),
-        "category": keyword,
-        "grade_level": "K-5",
-        "shop_name": shop_name,
-        "shop_url": shop_url,
-        "date_published": "",
-        "thumbnail": thumbnail,
-        "keyword_searched": keyword,
-        "scraped_at": datetime.now().isoformat(),
-    }
-
-
-async def scrape_store(store_name: str) -> List[Dict[str, Any]]:
-    """Scrape products for a specific TPT store."""
-    if not PLAYWRIGHT_AVAILABLE:
-        products = generate_mock_products(store_name, count=15)
-        for p in products:
-            p["shop_name"] = store_name.replace("-", " ").title()
-            p["shop_url"] = f"https://www.teacherspayteachers.com/Store/{store_name}"
-        return await _save_and_return(products, f"store:{store_name}")
-
-    try:
-        products = await _playwright_scrape_store(store_name)
-        if not products:
-            products = generate_mock_products(store_name, count=15)
-            for p in products:
-                p["shop_name"] = store_name.replace("-", " ").title()
-    except Exception as e:
-        print(f"[scraper] Store scrape failed for '{store_name}': {e}")
-        products = generate_mock_products(store_name, count=15)
-        for p in products:
-            p["shop_name"] = store_name.replace("-", " ").title()
-
-    return await _save_and_return(products, f"store:{store_name}")
-
-
-async def _playwright_scrape_store(store_name: str) -> List[Dict[str, Any]]:
-    """Scrape store page."""
-    url = f"https://www.teacherspayteachers.com/Store/{store_name}?order=Most+Reviewed"
-    products = []
-
-    async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, args=["--no-sandbox"])
-        page = await browser.new_page(user_agent=(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
-        ))
-        try:
-            await page.goto(url, timeout=30000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(2000)
-            cards = await page.query_selector_all("[data-testid='product-card'], .ProductCard")
-            for card in cards[:20]:
-                try:
-                    p_data = await _extract_card_data(card, store_name)
-                    if p_data:
-                        p_data["shop_name"] = store_name.replace("-", " ").title()
-                        products.append(enrich_product(p_data, store_name))
-                except Exception:
-                    continue
-        finally:
-            await browser.close()
-
     return products
 
 
 async def preload_demo_data():
-    """Pre-load demo data for all categories and stores."""
-    from database import get_db_stats
-    stats = await get_db_stats()
-    if stats["total_products"] > 50:
-        return  # Already have data
-
-    print("[scraper] Pre-loading demo data...")
-    for cat in CATEGORIES[:5]:
-        products = generate_mock_products(cat, count=15)
-        for p in products:
-            try:
-                pid = await upsert_product(p)
-                p["id"] = pid
-            except Exception:
-                pass
-        await set_cache(cat)
-        print(f"[scraper]   Loaded {len(products)} products for '{cat}'")
+    """Pre-load data for all categories on first startup."""
+    try:
+        from database import upsert_product, get_db_stats, set_cache
+        stats = await get_db_stats()
+        if stats["total_products"] > 50:
+            return
+        print("[scraper] Pre-loading data for all categories...")
+        for cat in CATEGORIES[:6]:
+            products = scrape_keyword_sync(cat, count=15)
+            for p in products:
+                try:
+                    pid = await upsert_product(p)
+                    p["id"] = pid
+                except Exception:
+                    pass
+            await set_cache(cat)
+            print(f"[scraper] ✅ {len(products)} products loaded for '{cat}'")
+    except Exception as e:
+        print(f"[scraper] preload error: {e}")
