@@ -8,8 +8,7 @@
     "backend": {
       "root": "backend",
       "framework": "fastapi",
-      "buildCommand": "pip install -r requirements.txt",
-      "devCommand": "uvicorn main:app --port 8000"
+      "buildCommand": "pip install -r requirements.txt"
     }
   }
 }
