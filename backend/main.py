@@ -5,7 +5,8 @@ load_dotenv()
 
 from fastapi import FastAPI, HTTPException, Query, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 import io
 import csv
 from typing import Optional, List
@@ -330,3 +331,16 @@ async def health():
         "has_neon": bool(os.getenv("DATABASE_URL")),
         "timestamp": datetime.now().isoformat(),
     }
+
+
+# ─────────────────────────────── Serve React SPA ──────────────────────────────
+
+STATIC_DIR = os.path.join(os.path.dirname(__file__), "static")
+
+if os.path.isdir(STATIC_DIR):
+    app.mount("/assets", StaticFiles(directory=os.path.join(STATIC_DIR, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        index = os.path.join(STATIC_DIR, "index.html")
+        return FileResponse(index)
