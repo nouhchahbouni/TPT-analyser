@@ -439,37 +439,86 @@ def _finalize(products: List[Dict], keyword: str) -> List[Dict]:
 # Public scrape functions
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _fetch_tpt_api(keyword: str) -> List[Dict]:
-    """Call TPT's internal search API directly via ScrapingBee."""
+JS_EXTRACT = """
+(function() {
+    function findProducts(obj, depth) {
+        if (depth > 8 || !obj || typeof obj !== 'object') return null;
+        var keys = Object.keys(obj);
+        for (var i = 0; i < keys.length; i++) {
+            var val = obj[keys[i]];
+            if (Array.isArray(val) && val.length > 2) {
+                var first = val[0];
+                if (first && typeof first === 'object' && (first.name || first.title || first.resourceTitle)) {
+                    return val;
+                }
+            }
+            if (val && typeof val === 'object' && !Array.isArray(val)) {
+                var found = findProducts(val, depth + 1);
+                if (found) return found;
+            }
+        }
+        return null;
+    }
+    var sources = [window, window.__store__, window.__REDUX_STORE__, window.App];
+    for (var s = 0; s < sources.length; s++) {
+        try {
+            var products = findProducts(sources[s], 0);
+            if (products && products.length > 0) return JSON.stringify(products.slice(0, 40));
+        } catch(e) {}
+    }
+    return JSON.stringify([]);
+})()
+"""
+
+def _fetch_tpt_js(keyword: str) -> List[Dict]:
+    """Use ScrapingBee JS snippet to extract products from TPT's JS state after page load."""
     if not SCRAPINGBEE_KEY:
         raise RuntimeError("SCRAPINGBEE_API_KEY not set")
-    api_url = f"https://www.teacherspayteachers.com/api/v1/resources?query={requests.utils.quote(keyword)}&limit=30&order=Most+Reviewed"
+    url = f"https://www.teacherspayteachers.com/browse?search={requests.utils.quote(keyword)}&order=Most+Reviewed"
     resp = requests.get(
         SCRAPINGBEE_URL,
         params={
             "api_key": SCRAPINGBEE_KEY,
-            "url": api_url,
-            "render_js": "false",
+            "url": url,
+            "render_js": "true",
+            "wait": "6000",
+            "js_snippet": JS_EXTRACT,
         },
-        timeout=60,
+        timeout=90,
     )
     resp.raise_for_status()
-    data = resp.json()
-    resources = data.get("resources") or data.get("data") or data.get("results") or []
-    if not isinstance(resources, list):
+    # ScrapingBee returns JS snippet result in response body when js_snippet is used
+    try:
+        raw = resp.json()
+        if isinstance(raw, list):
+            items = raw
+        elif isinstance(raw, dict):
+            items = raw.get("result") or raw.get("data") or []
+        else:
+            items = json.loads(resp.text)
+    except Exception:
+        try:
+            items = json.loads(resp.text)
+        except Exception:
+            return []
+
+    if not isinstance(items, list):
         return []
+
     products = []
-    for r in resources:
+    for r in items:
+        if not isinstance(r, dict):
+            continue
         name = r.get("name") or r.get("title") or r.get("resourceTitle") or ""
         if not name:
             continue
         rid = r.get("id") or r.get("resourceId") or ""
-        url = r.get("url") or (f"https://www.teacherspayteachers.com/Product/{rid}" if rid else "")
+        url_p = r.get("url") or (f"https://www.teacherspayteachers.com/Product/{rid}" if rid else "")
         price_raw = r.get("price") or r.get("priceInCents", 0)
         price = float(price_raw) / 100 if isinstance(price_raw, int) and price_raw > 100 else float(price_raw or 0)
         products.append({
             "title": str(name)[:200],
-            "url": url if str(url).startswith("http") else f"https://www.teacherspayteachers.com{url}",
+            "url": url_p if str(url_p).startswith("http") else f"https://www.teacherspayteachers.com{url_p}",
             "price": price,
             "rating": float(r.get("rating") or r.get("averageRating") or 0),
             "reviews_total": int(r.get("ratingCount") or r.get("reviewCount") or 0),
@@ -484,14 +533,14 @@ def _fetch_tpt_api(keyword: str) -> List[Dict]:
 
 def scrape_keyword_sync(keyword: str, count: int = 30) -> List[Dict]:
     """Scrape TPT search for a keyword. Returns enriched product list."""
-    # Try TPT internal API first (fast, no JS rendering needed)
+    # Try JS snippet extraction (reads from window state after page load)
     try:
-        products = _fetch_tpt_api(keyword)
+        products = _fetch_tpt_js(keyword)
         if products:
-            print(f"[scraper] ✅ {len(products)} real products via TPT API for '{keyword}'")
+            print(f"[scraper] ✅ {len(products)} real products via JS extraction for '{keyword}'")
             return _finalize(products, keyword)
     except Exception as e:
-        print(f"[scraper] TPT API failed for '{keyword}': {e}")
+        print(f"[scraper] JS extraction failed for '{keyword}': {e}")
 
     # Fallback: scrape HTML page with JS rendering
     url = f"https://www.teacherspayteachers.com/browse?search={keyword.replace(' ', '+')}&order=Most+Reviewed"
