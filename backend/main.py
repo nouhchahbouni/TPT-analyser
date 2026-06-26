@@ -32,9 +32,12 @@ app.add_middleware(
 async def startup():
     try:
         await db.init_db()
-        await sc.preload_demo_data()
     except Exception as e:
         print(f"[startup] DB init failed (will use mock data): {e}")
+    try:
+        await sc.preload_demo_data()
+    except Exception as e:
+        print(f"[startup] preload failed (non-fatal): {e}")
 
 
 # ─────────────────────────────── Products ─────────────────────────────────────
