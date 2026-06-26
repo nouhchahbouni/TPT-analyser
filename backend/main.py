@@ -360,24 +360,61 @@ async def export_csv(q: str = "", category: str = ""):
 
 @app.get("/api/debug/tpt")
 async def debug_tpt(q: str = "math"):
-    """Test TPT apolloState extraction. Shows real results or explains what failed."""
+    """Test TPT data extraction — tries HTML apolloState then GraphQL API."""
     import asyncio
+    import requests as _req
     loop = asyncio.get_event_loop()
+
+    result = {"query": q}
+
+    # Test 1: direct HTML fetch
     try:
         html = await loop.run_in_executor(None, sc._fetch_tpt_search, q)
         has_apollo = "apolloState" in html
-        has_search = "searchResources" in html
         products = sc._extract_apollo_products(html) if has_apollo else []
-        return {
-            "status": "success" if products else "no_products",
+        result["html_fetch"] = {
+            "status": "success" if products else ("has_apollo_no_products" if has_apollo else "blocked"),
             "html_length": len(html),
             "has_apolloState": has_apollo,
-            "has_searchResources": has_search,
             "products_found": len(products),
-            "sample": products[:2] if products else [],
+            "sample": products[:1] if products else [],
         }
+        if products:
+            result["status"] = "success"
+            return result
     except Exception as e:
-        return {"status": "error", "error": str(e)}
+        result["html_fetch"] = {"status": "error", "error": str(e)}
+
+    # Test 2: GraphQL API
+    def _try_graphql():
+        resp = _req.post(
+            "https://www.teacherspayteachers.com/graph/graphql?opname=SearchResources",
+            headers={
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+                "Origin": "https://www.teacherspayteachers.com",
+                "Referer": f"https://www.teacherspayteachers.com/browse?search={q}",
+                "x-requested-with": "XMLHttpRequest",
+            },
+            json={
+                "operationName": "SearchResources",
+                "variables": {"query": q, "pageNum": 0, "resourcesPerPage": 5, "sortType": "RELEVANCE", "debug": False, "inputFacets": [], "withFacets": [], "withHighlights": False, "withStores": False},
+                "query": "query SearchResources($query:String,$pageNum:Int,$resourcesPerPage:Int,$sortType:String,$debug:Boolean,$inputFacets:[String],$withFacets:[String],$withHighlights:Boolean,$withStores:Boolean){searchResources(query:$query,pageNum:$pageNum,resourcesPerPage:$resourcesPerPage,sortType:$sortType,debug:$debug,inputFacets:$inputFacets,withFacets:$withFacets,withHighlights:$withHighlights,withStores:$withStores){totalCount resources{id name pricing{nonTransferableLicenses{price}}rating{averageRating count}}}}",
+            },
+            timeout=30,
+        )
+        return resp.status_code, resp.text[:2000]
+
+    try:
+        status_code, body = await loop.run_in_executor(None, _try_graphql)
+        result["graphql"] = {"http_status": status_code, "response_preview": body}
+        result["status"] = "graphql_tested"
+    except Exception as e:
+        result["graphql"] = {"status": "error", "error": str(e)}
+
+    result.setdefault("status", "all_failed")
+    return result
 
 
 @app.get("/api/debug/algolia")
