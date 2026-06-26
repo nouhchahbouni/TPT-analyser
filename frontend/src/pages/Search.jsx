@@ -177,11 +177,13 @@ export default function Search() {
   }
 
   const handleScrape = async () => {
-    if (!query) return
+    const kw = inputVal.trim() || query
+    if (!kw) return
     setScraping(true)
     try {
-      await axios.post(`/api/scrape/keyword?q=${encodeURIComponent(query)}`)
-      setTimeout(() => fetchProducts(query), 3000)
+      await axios.post(`/api/scrape/keyword?q=${encodeURIComponent(kw)}`)
+      await new Promise(r => setTimeout(r, 8000))
+      await fetchProducts(kw)
     } finally {
       setScraping(false)
     }
