@@ -63,7 +63,6 @@ def _fetch_html(url: str) -> str:
             "wait": "8000",
             "block_ads": "true",
             "block_resources": "false",
-            "premium_proxy": "true",
         },
         timeout=120,
     )
@@ -472,9 +471,11 @@ JS_EXTRACT = """
 
 def _fetch_tpt_js(keyword: str) -> List[Dict]:
     """Use ScrapingBee JS snippet to extract products from TPT's JS state after page load."""
+    import base64
     if not SCRAPINGBEE_KEY:
         raise RuntimeError("SCRAPINGBEE_API_KEY not set")
     url = f"https://www.teacherspayteachers.com/browse?search={requests.utils.quote(keyword)}&order=Most+Reviewed"
+    js_b64 = base64.b64encode(JS_EXTRACT.encode()).decode()
     resp = requests.get(
         SCRAPINGBEE_URL,
         params={
@@ -482,7 +483,7 @@ def _fetch_tpt_js(keyword: str) -> List[Dict]:
             "url": url,
             "render_js": "true",
             "wait": "6000",
-            "js_snippet": JS_EXTRACT,
+            "js_snippet": js_b64,
         },
         timeout=90,
     )
