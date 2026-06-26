@@ -188,6 +188,100 @@ def _extract_next_data(soup: BeautifulSoup) -> List[Dict]:
         return []
 
 
+def _extract_tpt_state(soup: BeautifulSoup) -> List[Dict]:
+    """Extract products from TPT's inline var state = {...} JavaScript object."""
+    products = []
+    for script in soup.find_all("script"):
+        text = script.string or ""
+        if "var state" not in text and "window.state" not in text:
+            continue
+        # Extract the state JSON object
+        m = re.search(r'var state\s*=\s*(\{.+\})\s*;?\s*(?:var|window|$)', text, re.DOTALL)
+        if not m:
+            m = re.search(r'var state\s*=\s*(\{.+)', text, re.DOTALL)
+        if not m:
+            continue
+        raw = m.group(1).strip().rstrip(';')
+        # Try to find matching brace
+        depth = 0
+        end = 0
+        for i, ch in enumerate(raw):
+            if ch == '{':
+                depth += 1
+            elif ch == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        if end:
+            raw = raw[:end]
+        try:
+            state = json.loads(raw)
+        except Exception:
+            # Try to find product-like structures with regex
+            resource_blocks = re.findall(
+                r'\{[^{}]*"(?:name|title)":\s*"([^"]{5,})"[^{}]*"price":\s*([\d.]+)[^{}]*\}',
+                text
+            )
+            for name, price in resource_blocks[:30]:
+                products.append({
+                    "title": name[:200],
+                    "url": "",
+                    "price": float(price),
+                    "rating": 0.0,
+                    "reviews_total": 0,
+                    "thumbnail": "",
+                    "shop_name": "",
+                    "has_bestseller": False,
+                    "has_image": False,
+                })
+            continue
+
+        # Navigate through state to find resources/products
+        def find_resources(obj, depth=0):
+            if depth > 6 or not isinstance(obj, dict):
+                return []
+            for key in ("resources", "products", "searchResults", "items", "data"):
+                if key in obj and isinstance(obj[key], list) and len(obj[key]) > 0:
+                    arr = obj[key]
+                    if isinstance(arr[0], dict) and ("name" in arr[0] or "title" in arr[0]):
+                        return arr
+            for v in obj.values():
+                if isinstance(v, dict):
+                    result = find_resources(v, depth + 1)
+                    if result:
+                        return result
+                elif isinstance(v, list) and v and isinstance(v[0], dict):
+                    if "name" in v[0] or "title" in v[0]:
+                        return v
+            return []
+
+        resources = find_resources(state)
+        for r in resources:
+            name = r.get("name") or r.get("title") or r.get("resourceTitle") or ""
+            if not name:
+                continue
+            rid = r.get("id") or r.get("resourceId") or ""
+            url = r.get("url") or (f"https://www.teacherspayteachers.com/Product/{rid}" if rid else "")
+            price_raw = r.get("price") or r.get("priceInCents", 0)
+            price = float(price_raw) / 100 if isinstance(price_raw, int) and price_raw > 100 else float(price_raw or 0)
+            products.append({
+                "title": str(name)[:200],
+                "url": url if str(url).startswith("http") else f"https://www.teacherspayteachers.com{url}",
+                "price": price,
+                "rating": float(r.get("rating") or r.get("averageRating") or 0),
+                "reviews_total": int(r.get("ratingCount") or r.get("reviewCount") or 0),
+                "thumbnail": r.get("thumbnailUrl") or r.get("previewUrl") or "",
+                "shop_name": r.get("sellerName") or r.get("storeName") or "",
+                "shop_url": f"https://www.teacherspayteachers.com/Store/{r.get('storeUrlName', '')}",
+                "has_bestseller": bool(r.get("isBestSeller")),
+                "has_image": bool(r.get("thumbnailUrl")),
+            })
+        if products:
+            break
+    return products
+
+
 def _extract_inline_json(soup: BeautifulSoup) -> List[Dict]:
     """Search all inline scripts for product arrays."""
     products = []
@@ -243,7 +337,13 @@ def _parse_search_page(html: str, keyword: str) -> List[Dict]:
     """Parse TPT search results page HTML → list of product dicts."""
     soup = BeautifulSoup(html, "html.parser")
 
-    # 1. Try __NEXT_DATA__ (most reliable — server-side rendered JSON)
+    # 1. Try TPT's inline var state = {...}
+    products = _extract_tpt_state(soup)
+    if products:
+        print(f"[scraper] ✅ Extracted {len(products)} products from TPT state")
+        return _finalize(products, keyword)
+
+    # 2. Try __NEXT_DATA__ (most reliable — server-side rendered JSON)
     products = _extract_next_data(soup)
     if products:
         print(f"[scraper] ✅ Extracted {len(products)} products from __NEXT_DATA__")

@@ -331,6 +331,7 @@ async def debug_scrape(q: str = "math"):
         json_ld = sc._extract_json_ld(soup)
         next_products = sc._extract_next_data(soup)
         cards = soup.select("[data-testid='product-card']") or soup.select(".ProductRowCard")
+        state_products = sc._extract_tpt_state(soup)
         inline = sc._extract_inline_json(soup)
         scripts = soup.find_all("script")
         script_keywords = []
@@ -344,6 +345,7 @@ async def debug_scrape(q: str = "math"):
             "json_ld_count": len(json_ld),
             "next_data_count": len(next_products),
             "html_cards_count": len(cards),
+            "tpt_state_count": len(state_products),
             "inline_json_count": len(inline),
             "scripts_with_data": script_keywords[:3],
             "html_preview": html[:300],
