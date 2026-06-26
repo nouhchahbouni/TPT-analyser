@@ -125,16 +125,85 @@ def _normalize_jsonld(item: dict) -> dict:
         "has_image": bool(item.get("image")),
     }
 
+def _extract_next_data(soup: BeautifulSoup) -> List[Dict]:
+    """Extract products from Next.js __NEXT_DATA__ JSON embedded in TPT pages."""
+    tag = soup.find("script", id="__NEXT_DATA__")
+    if not tag or not tag.string:
+        return []
+    try:
+        data = json.loads(tag.string)
+        # Navigate into the Next.js page props
+        props = data.get("props", {}).get("pageProps", {})
+        # Try common TPT data keys
+        resources = (
+            props.get("resources") or
+            props.get("products") or
+            props.get("searchResults", {}).get("resources") or
+            props.get("searchResults", {}).get("data") or
+            props.get("initialData", {}).get("resources") or
+            []
+        )
+        if not resources and "dehydratedState" in props:
+            # React Query dehydrated state
+            queries = props["dehydratedState"].get("queries", [])
+            for q in queries:
+                qdata = q.get("state", {}).get("data", {})
+                resources = (qdata.get("resources") or qdata.get("products") or
+                             qdata.get("data", {}).get("resources") or [])
+                if resources:
+                    break
+        products = []
+        for r in resources:
+            if not isinstance(r, dict):
+                continue
+            name = r.get("name") or r.get("title") or r.get("resourceTitle") or ""
+            if not name:
+                continue
+            rid = r.get("id") or r.get("resourceId") or ""
+            url = r.get("url") or (f"https://www.teacherspayteachers.com/Product/{rid}" if rid else "")
+            price_raw = r.get("price") or r.get("priceInCents", 0)
+            price = float(price_raw) / 100 if isinstance(price_raw, int) and price_raw > 100 else float(price_raw or 0)
+            rating = float(r.get("rating") or r.get("averageRating") or 0)
+            reviews = int(r.get("ratingCount") or r.get("reviewCount") or r.get("totalRatings") or 0)
+            shop = r.get("sellerName") or r.get("storeName") or r.get("seller", {}).get("name") or ""
+            shop_url_slug = r.get("storeUrlName") or r.get("seller", {}).get("urlName") or ""
+            thumb = (r.get("thumbnailUrl") or r.get("previewImages", [{}])[0].get("url") if r.get("previewImages") else "") or ""
+            bs = bool(r.get("isBestSeller") or r.get("bestSeller"))
+            products.append({
+                "title": str(name)[:200],
+                "url": url if url.startswith("http") else f"https://www.teacherspayteachers.com{url}",
+                "price": price,
+                "rating": rating,
+                "reviews_total": reviews,
+                "thumbnail": thumb,
+                "shop_name": shop,
+                "shop_url": f"https://www.teacherspayteachers.com/Store/{shop_url_slug}" if shop_url_slug else "",
+                "has_bestseller": bs,
+                "has_image": bool(thumb),
+            })
+        return products
+    except Exception as e:
+        print(f"[scraper] __NEXT_DATA__ parse error: {e}")
+        return []
+
+
 def _parse_search_page(html: str, keyword: str) -> List[Dict]:
     """Parse TPT search results page HTML → list of product dicts."""
     soup = BeautifulSoup(html, "html.parser")
 
-    # Try JSON-LD first (cleanest data)
-    products = _extract_json_ld(soup)
+    # 1. Try __NEXT_DATA__ (most reliable — server-side rendered JSON)
+    products = _extract_next_data(soup)
     if products:
+        print(f"[scraper] ✅ Extracted {len(products)} products from __NEXT_DATA__")
         return _finalize(products, keyword)
 
-    # Fallback: parse product cards from HTML
+    # 2. Try JSON-LD schema markup
+    products = _extract_json_ld(soup)
+    if products:
+        print(f"[scraper] ✅ Extracted {len(products)} products from JSON-LD")
+        return _finalize(products, keyword)
+
+    # 3. Fallback: parse product cards from HTML
     cards = (
         soup.select("[data-testid='product-card']") or
         soup.select(".ProductRowCard") or
@@ -145,7 +214,6 @@ def _parse_search_page(html: str, keyword: str) -> List[Dict]:
 
     for card in cards[:30]:
         try:
-            # Title + URL
             link = card.find("a", href=re.compile(r"/Product/"))
             if not link:
                 continue
@@ -153,36 +221,22 @@ def _parse_search_page(html: str, keyword: str) -> List[Dict]:
             url = link.get("href", "")
             if url and not url.startswith("http"):
                 url = "https://www.teacherspayteachers.com" + url
-
-            # Price
             price_el = (card.find(attrs={"data-testid": "price"}) or
                         card.find(class_=re.compile(r"[Pp]rice")))
             price = _parse_price(price_el.get_text() if price_el else "")
-
-            # Rating
             rating_el = card.find(attrs={"aria-label": re.compile(r"star|rating", re.I)})
             rating = _parse_rating(rating_el.get("aria-label", "") if rating_el else "")
-
-            # Reviews
             review_el = (card.find(attrs={"data-testid": "rating-count"}) or
                          card.find(class_=re.compile(r"[Rr]ating[Cc]ount|[Rr]eview")))
             reviews = _parse_int(review_el.get_text() if review_el else "")
-
-            # Shop
             shop_el = (card.find(attrs={"data-testid": "store-name"}) or
                        card.find(class_=re.compile(r"[Ss]tore|[Ss]eller|[Ss]hop")))
             shop_name = shop_el.get_text(strip=True) if shop_el else ""
-
-            # Thumbnail
             img = card.find("img")
             thumbnail = (img.get("src") or img.get("data-src") or "") if img else ""
-
-            # Best Seller badge
             bs = bool(card.find(class_=re.compile(r"[Bb]est[Ss]eller|[Bb]adge")))
-
             if not title:
                 continue
-
             products.append({
                 "title": title[:200],
                 "url": url,
@@ -197,6 +251,8 @@ def _parse_search_page(html: str, keyword: str) -> List[Dict]:
         except Exception:
             continue
 
+    if products:
+        print(f"[scraper] ✅ Extracted {len(products)} products from HTML cards")
     return _finalize(products, keyword)
 
 def _finalize(products: List[Dict], keyword: str) -> List[Dict]:
