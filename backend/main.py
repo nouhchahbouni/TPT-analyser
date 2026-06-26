@@ -361,88 +361,62 @@ async def export_csv(q: str = "", category: str = ""):
 
 @app.get("/api/debug/tpt")
 async def debug_tpt(q: str = "math"):
-    """Test TPT data extraction — tries HTML apolloState then GraphQL API."""
-    import asyncio
-    import requests as _req
+    """Test TPT data extraction and dump raw Apollo product structure."""
+    import re as _re
     loop = asyncio.get_event_loop()
 
     result = {"query": q}
 
-    # Test 1: direct HTML fetch
     try:
         html = await loop.run_in_executor(None, sc._fetch_tpt_search, q)
         has_apollo = "apolloState" in html
-        products = sc._extract_apollo_products(html) if has_apollo else []
-        result["html_fetch"] = {
-            "status": "success" if products else ("has_apollo_no_products" if has_apollo else "blocked"),
-            "html_length": len(html),
-            "has_apolloState": has_apollo,
-            "products_found": len(products),
-            "sample": products[:1] if products else [],
-        }
-        if products:
-            result["status"] = "success"
+        result["html_length"] = len(html)
+        result["has_apolloState"] = has_apollo
+
+        if not has_apollo:
+            result["status"] = "no_apollo"
             return result
+
+        # Parse apolloState
+        m = _re.search(r'"apolloState"\s*:\s*(\{)', html)
+        start = m.start(1)
+        depth, end = 0, start
+        for i in range(start, min(start + 5_000_000, len(html))):
+            c = html[i]
+            if c == '{': depth += 1
+            elif c == '}':
+                depth -= 1
+                if depth == 0:
+                    end = i + 1
+                    break
+        apollo = json.loads(html[start:end])
+        root = apollo.get("ROOT_QUERY", {})
+        search_key = next((k for k in root if k.startswith("searchResources(")), None)
+        result["search_key_found"] = bool(search_key)
+
+        if search_key:
+            refs = root[search_key].get("resources", [])
+            result["total_refs"] = len(refs)
+            if refs:
+                first_ref = refs[0].get("__ref")
+                raw = apollo.get(first_ref, {})
+                result["raw_keys"] = list(raw.keys())
+                result["raw_product"] = {k: v for k, v in list(raw.items())[:30]}
+                # Also show what refs resolve to
+                for k, v in list(raw.items())[:30]:
+                    if isinstance(v, dict) and "__ref" in v:
+                        resolved = apollo.get(v["__ref"], {})
+                        result[f"resolved_{k}"] = resolved
+
+        products = sc._extract_apollo_products(html)
+        result["products_found"] = len(products)
+        result["sample"] = products[:2]
+        result["status"] = "success" if products else "parsed_but_empty"
+
     except Exception as e:
-        result["html_fetch"] = {"status": "error", "error": str(e)}
+        result["status"] = "error"
+        result["error"] = str(e)
 
-    # Test 2: dump raw Apollo keys for first product to understand structure
-    if result.get("html_fetch", {}).get("has_apolloState"):
-        try:
-            html = await loop.run_in_executor(None, sc._fetch_tpt_search, q)
-            import re as _re
-            m = _re.search(r'"apolloState"\s*:\s*(\{)', html)
-            if m:
-                start = m.start(1)
-                depth = 0
-                end = start
-                for i in range(start, min(start + 5_000_000, len(html))):
-                    c = html[i]
-                    if c == '{': depth += 1
-                    elif c == '}':
-                        depth -= 1
-                        if depth == 0:
-                            end = i + 1
-                            break
-                apollo = json.loads(html[start:end])
-                root = apollo.get("ROOT_QUERY", {})
-                search_key = next((k for k in root if k.startswith("searchResources(")), None)
-                if search_key:
-                    refs = root[search_key].get("resources", [])
-                    if refs:
-                        first_ref = refs[0].get("__ref")
-                        if first_ref:
-                            raw_product = apollo.get(first_ref, {})
-                            result["raw_product_keys"] = list(raw_product.keys())
-                            result["raw_product_sample"] = {k: v for k, v in list(raw_product.items())[:20]}
-        except Exception as e:
-            result["debug_error"] = str(e)
-
-    # Test 3: GraphQL introspection — find the real field names
-    def _try_introspect():
-        resp = _req.post(
-            "https://www.teacherspayteachers.com/graph/graphql?opname=Introspect",
-            headers={
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
-                "Origin": "https://www.teacherspayteachers.com",
-                "Referer": "https://www.teacherspayteachers.com/browse?search=math",
-                "x-requested-with": "XMLHttpRequest",
-            },
-            json={"query": "{ __schema { queryType { fields { name args { name type { name kind ofType { name kind } } } } } } }"},
-            timeout=30,
-        )
-        return resp.status_code, resp.text[:8000]
-
-    try:
-        status_code, body = await loop.run_in_executor(None, _try_introspect)
-        result["graphql_schema"] = {"http_status": status_code, "fields": body}
-        result["status"] = "schema_fetched"
-    except Exception as e:
-        result["graphql_schema"] = {"status": "error", "error": str(e)}
-
-    result.setdefault("status", "all_failed")
     return result
 
 
