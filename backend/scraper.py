@@ -439,18 +439,72 @@ def _finalize(products: List[Dict], keyword: str) -> List[Dict]:
 # Public scrape functions
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _fetch_tpt_api(keyword: str) -> List[Dict]:
+    """Call TPT's internal search API directly via ScrapingBee."""
+    if not SCRAPINGBEE_KEY:
+        raise RuntimeError("SCRAPINGBEE_API_KEY not set")
+    api_url = f"https://www.teacherspayteachers.com/api/v1/resources?query={requests.utils.quote(keyword)}&limit=30&order=Most+Reviewed"
+    resp = requests.get(
+        SCRAPINGBEE_URL,
+        params={
+            "api_key": SCRAPINGBEE_KEY,
+            "url": api_url,
+            "render_js": "false",
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    data = resp.json()
+    resources = data.get("resources") or data.get("data") or data.get("results") or []
+    if not isinstance(resources, list):
+        return []
+    products = []
+    for r in resources:
+        name = r.get("name") or r.get("title") or r.get("resourceTitle") or ""
+        if not name:
+            continue
+        rid = r.get("id") or r.get("resourceId") or ""
+        url = r.get("url") or (f"https://www.teacherspayteachers.com/Product/{rid}" if rid else "")
+        price_raw = r.get("price") or r.get("priceInCents", 0)
+        price = float(price_raw) / 100 if isinstance(price_raw, int) and price_raw > 100 else float(price_raw or 0)
+        products.append({
+            "title": str(name)[:200],
+            "url": url if str(url).startswith("http") else f"https://www.teacherspayteachers.com{url}",
+            "price": price,
+            "rating": float(r.get("rating") or r.get("averageRating") or 0),
+            "reviews_total": int(r.get("ratingCount") or r.get("reviewCount") or 0),
+            "thumbnail": r.get("thumbnailUrl") or r.get("previewUrl") or "",
+            "shop_name": r.get("sellerName") or r.get("storeName") or "",
+            "shop_url": f"https://www.teacherspayteachers.com/Store/{r.get('storeUrlName', '')}",
+            "has_bestseller": bool(r.get("isBestSeller")),
+            "has_image": bool(r.get("thumbnailUrl")),
+        })
+    return products
+
+
 def scrape_keyword_sync(keyword: str, count: int = 30) -> List[Dict]:
     """Scrape TPT search for a keyword. Returns enriched product list."""
+    # Try TPT internal API first (fast, no JS rendering needed)
+    try:
+        products = _fetch_tpt_api(keyword)
+        if products:
+            print(f"[scraper] ✅ {len(products)} real products via TPT API for '{keyword}'")
+            return _finalize(products, keyword)
+    except Exception as e:
+        print(f"[scraper] TPT API failed for '{keyword}': {e}")
+
+    # Fallback: scrape HTML page with JS rendering
     url = f"https://www.teacherspayteachers.com/browse?search={keyword.replace(' ', '+')}&order=Most+Reviewed"
     try:
         html = _fetch_html(url)
         products = _parse_search_page(html, keyword)
         if products:
-            print(f"[scraper] ✅ Scraped {len(products)} real products for '{keyword}'")
+            print(f"[scraper] ✅ {len(products)} real products via HTML for '{keyword}'")
             return products
     except Exception as e:
-        print(f"[scraper] ⚠️ ScrapingBee failed for '{keyword}': {e}")
-    # Fallback to mock
+        print(f"[scraper] ⚠️ HTML scrape failed for '{keyword}': {e}")
+
+    print(f"[scraper] ⚠️ Using mock data for '{keyword}'")
     return generate_mock_products(keyword, count)
 
 def scrape_store_sync(store_name: str, count: int = 20) -> List[Dict]:
