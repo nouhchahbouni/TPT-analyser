@@ -14,6 +14,15 @@ from calculator import enrich_product
 SCRAPINGBEE_KEY = os.getenv("SCRAPINGBEE_API_KEY", "")
 SCRAPINGBEE_URL = "https://app.scrapingbee.com/api/v1/"
 
+# TPT uses Algolia for search — these are TPT's client-side (read-only) credentials.
+# Set TPT_ALGOLIA_KEY env var on Railway to override when this key expires.
+ALGOLIA_APP_ID = os.getenv("TPT_ALGOLIA_APP_ID", "FNSE9IYL6S")
+ALGOLIA_API_KEY = os.getenv(
+    "TPT_ALGOLIA_KEY",
+    "YWQzNjM4ZTk0OGZlMzVlMTVlZWVkMzFiZDkwNGE5OTQ4NDI1ODQ5ZWQzZWZiMzQ5ZGUxNjQ3YTQwMWYzYjg1M2ZpbHRlcnM9JTI4aXNGcmVlJTNBZmFsc2UlMjklMjBBTkQlMjAlMjhpc0FwcHJvdmVkJTNBdHJ1ZSUyOQ=="
+)
+ALGOLIA_INDEX = os.getenv("TPT_ALGOLIA_INDEX", "production_resources")
+
 CATEGORIES = [
     "math", "ela-english-language-arts", "science",
     "social-studies-history", "social-emotional-learning",
@@ -534,11 +543,12 @@ def _fetch_tpt_js(keyword: str) -> List[Dict]:
 
 def _fetch_algolia(keyword: str, count: int = 30) -> List[Dict]:
     """Call TPT's Algolia search API directly — no JS rendering needed."""
+    endpoint = f"https://{ALGOLIA_APP_ID.lower()}-dsn.algolia.net/1/indexes/{ALGOLIA_INDEX}/query"
     resp = requests.post(
-        "https://fnse9iyl6s-dsn.algolia.net/1/indexes/production_resources/query",
+        endpoint,
         headers={
-            "x-algolia-application-id": "FNSE9IYL6S",
-            "x-algolia-api-key": "YWQzNjM4ZTk0OGZlMzVlMTVlZWVkMzFiZDkwNGE5OTQ4NDI1ODQ5ZWQzZWZiMzQ5ZGUxNjQ3YTQwMWYzYjg1M2ZpbHRlcnM9JTI4aXNGcmVlJTNBZmFsc2UlMjklMjBBTkQlMjAlMjhpc0FwcHJvdmVkJTNBdHJ1ZSUyOQ==",
+            "x-algolia-application-id": ALGOLIA_APP_ID,
+            "x-algolia-api-key": ALGOLIA_API_KEY,
             "Content-Type": "application/json",
         },
         json={

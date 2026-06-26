@@ -49,19 +49,46 @@ async def get_products(
     offset: int = 0,
     category: str = "",
     shop_name: str = "",
+    background_tasks: BackgroundTasks = None,
 ):
+    keyword = q or category or shop_name or "math"
+
+    # 1. Try the database (fast, cached results)
     try:
         products = await db.get_products(q=q, limit=limit, offset=offset,
                                          category=category, shop_name=shop_name)
-        enriched = [enrich_product(p, q or category or shop_name) for p in products]
+        enriched = [enrich_product(p, keyword) for p in products]
     except Exception as e:
         print(f"[products] DB error: {e}")
         enriched = []
 
-    # Always return data — use mock if DB is empty or failed
+    # 2. If DB empty, call Algolia live and cache results
     if not enriched:
-        keyword = q or category or shop_name or "math"
+        try:
+            loop = asyncio.get_event_loop()
+            live_products = await loop.run_in_executor(
+                None, sc.scrape_keyword_sync, keyword, min(limit, 40)
+            )
+            if live_products:
+                enriched = live_products
+                # Cache in DB in background
+                async def _store(prods):
+                    for p in prods:
+                        try:
+                            await db.upsert_product(p)
+                        except Exception:
+                            pass
+                if background_tasks:
+                    background_tasks.add_task(_store, live_products)
+                print(f"[products] Live Algolia: {len(enriched)} results for '{keyword}'")
+        except Exception as e:
+            print(f"[products] Algolia live call failed: {e}")
+
+    # 3. Ultimate fallback: mock data (always shows something)
+    if not enriched:
         enriched = sc.generate_mock_products(keyword, count=20)
+        for p in enriched:
+            p["_source"] = "mock"
 
     return enriched
 
@@ -215,9 +242,21 @@ async def delete_saved(saved_id: int):
 # ─────────────────────────────── Scraping ─────────────────────────────────────
 
 @app.post("/api/scrape/keyword")
-async def scrape_keyword_endpoint(q: str, background_tasks: BackgroundTasks):
+async def scrape_keyword_endpoint(q: str, background_tasks: BackgroundTasks, sync: bool = False):
     if not q:
         raise HTTPException(status_code=400, detail="Keyword required")
+    if sync:
+        # Synchronous: run Algolia now and return results immediately
+        loop = asyncio.get_event_loop()
+        products = await loop.run_in_executor(None, sc.scrape_keyword_sync, q, 40)
+        for p in products:
+            try:
+                pid = await db.upsert_product(p)
+                p["id"] = pid
+            except Exception:
+                pass
+        source = "algolia" if products and not products[0].get("_source") == "mock" else "mock"
+        return {"status": "done", "keyword": q, "count": len(products), "source": source, "products": products}
     background_tasks.add_task(sc.scrape_keyword, q, use_cache=False)
     return {"status": "started", "keyword": q}
 
@@ -318,6 +357,37 @@ async def export_csv(q: str = "", category: str = ""):
 
 
 # ─────────────────────────────── Health ───────────────────────────────────────
+
+@app.get("/api/debug/algolia")
+async def debug_algolia(q: str = "math"):
+    """Test TPT's Algolia API connectivity. Shows exactly what's working or not."""
+    import base64
+    key = sc.ALGOLIA_API_KEY
+    try:
+        key_decoded = base64.b64decode(key).decode()
+    except Exception:
+        key_decoded = "(not base64)"
+    try:
+        products = sc._fetch_algolia(q, count=3)
+        return {
+            "status": "success",
+            "products_count": len(products),
+            "algolia_app_id": sc.ALGOLIA_APP_ID,
+            "algolia_index": sc.ALGOLIA_INDEX,
+            "key_preview": key[:20] + "...",
+            "key_decoded_preview": key_decoded[:60] + "...",
+            "sample_product": products[0] if products else None,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "algolia_app_id": sc.ALGOLIA_APP_ID,
+            "algolia_index": sc.ALGOLIA_INDEX,
+            "key_preview": key[:20] + "...",
+            "key_decoded_preview": key_decoded[:60] + "...",
+            "fix": "Set TPT_ALGOLIA_KEY env var on Railway with a fresh key from Chrome DevTools → Network tab on teacherspayteachers.com",
+        }
 
 @app.get("/api/debug/scrape")
 async def debug_scrape(q: str = "math"):

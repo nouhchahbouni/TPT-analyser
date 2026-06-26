@@ -118,6 +118,7 @@ export default function Search() {
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
   const [scraping, setScraping] = useState(false)
+  const [dataSource, setDataSource] = useState(null) // 'algolia' | 'mock' | null
 
   // Filters
   const [selCats, setSelCats] = useState([])
@@ -154,11 +155,15 @@ export default function Search() {
         }
       }
 
+      // Detect if data is mock (picsum thumbnails = mock indicator)
+      const isMock = prods.length > 0 && (prods[0]?.thumbnail || '').includes('picsum.photos')
+      setDataSource(isMock ? 'mock' : prods.length > 0 ? 'algolia' : null)
       setProducts(prods)
       setTotal(prods.length)
     } catch {
       setProducts([])
       setTotal(0)
+      setDataSource(null)
     } finally {
       setLoading(false)
     }
@@ -180,9 +185,34 @@ export default function Search() {
     const kw = inputVal.trim() || query
     if (!kw) return
     setScraping(true)
+    setDataSource(null)
     try {
-      await axios.post(`/api/scrape/keyword?q=${encodeURIComponent(kw)}`)
-      await new Promise(r => setTimeout(r, 8000))
+      // sync=true: returns results immediately from Algolia
+      const res = await axios.post(`/api/scrape/keyword?q=${encodeURIComponent(kw)}&sync=true`)
+      if (res.data?.products?.length > 0) {
+        let prods = res.data.products
+        // Apply client-side filters
+        if (selCats.length > 0) prods = prods.filter(p => selCats.some(c => p.category?.toLowerCase().includes(c.toLowerCase())))
+        prods = prods.filter(p => (p.price || 0) >= priceMin && (p.price || 0) <= priceMax)
+        prods = prods.filter(p => (p.optim_score || 0) >= minOptim)
+        if (bestSellerOnly) prods = prods.filter(p => p.has_bestseller)
+        if (selMomentum) {
+          const opt = MOMENTUM_OPTS.find(o => o.value === selMomentum)
+          if (opt) prods = prods.filter(p => {
+            const m = p.momentum || 0
+            if (opt.min !== undefined && m < opt.min) return false
+            if (opt.max !== undefined && m >= opt.max) return false
+            return true
+          })
+        }
+        const isMock = prods.length > 0 && (prods[0]?.thumbnail || '').includes('picsum.photos')
+        setDataSource(res.data.source === 'mock' || isMock ? 'mock' : 'algolia')
+        setProducts(prods)
+        setTotal(prods.length)
+      } else {
+        await fetchProducts(kw)
+      }
+    } catch {
       await fetchProducts(kw)
     } finally {
       setScraping(false)
@@ -286,9 +316,19 @@ export default function Search() {
 
         <div style={styles.resultsMeta}>
           <span>{total} products found{query ? ` for "${query}"` : ''}</span>
+          {dataSource === 'algolia' && (
+            <span style={{ background: '#E8F5E9', color: '#0D7A35', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+              ✅ Données réelles TPT (Algolia)
+            </span>
+          )}
+          {dataSource === 'mock' && (
+            <span style={{ background: '#FFF3E0', color: '#E65100', borderRadius: 6, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>
+              ⚠️ Données simulées — clé Algolia expirée
+            </span>
+          )}
           {query && (
             <button style={styles.scrapeBtn} onClick={handleScrape} disabled={scraping}>
-              {scraping ? '⟳ Scraping...' : '🔄 Scrape Fresh Data'}
+              {scraping ? '⟳ Récupération TPT...' : '🔄 Données fraîches depuis TPT'}
             </button>
           )}
           {loading && <span className="spinner" style={{ width: 14, height: 14 }}></span>}

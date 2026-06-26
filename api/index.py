@@ -199,6 +199,78 @@ def generate_mock(keyword: str, count: int = 20) -> List[Dict]:
 
 # ──────────────────────────── DB (optional Neon) ──────────────────────────────
 
+# ──────────────────────────── Algolia (TPT internal search) ───────────────────
+
+ALGOLIA_APP_ID = os.getenv("TPT_ALGOLIA_APP_ID", "FNSE9IYL6S")
+ALGOLIA_API_KEY = os.getenv(
+    "TPT_ALGOLIA_KEY",
+    "YWQzNjM4ZTk0OGZlMzVlMTVlZWVkMzFiZDkwNGE5OTQ4NDI1ODQ5ZWQzZWZiMzQ5ZGUxNjQ3YTQwMWYzYjg1M2ZpbHRlcnM9JTI4aXNGcmVlJTNBZmFsc2UlMjklMjBBTkQlMjAlMjhpc0FwcHJvdmVkJTNBdHJ1ZSUyOQ=="
+)
+ALGOLIA_INDEX = os.getenv("TPT_ALGOLIA_INDEX", "production_resources")
+
+
+def fetch_algolia(keyword: str, count: int = 30) -> list:
+    import requests as _req
+    endpoint = f"https://{ALGOLIA_APP_ID.lower()}-dsn.algolia.net/1/indexes/{ALGOLIA_INDEX}/query"
+    resp = _req.post(
+        endpoint,
+        headers={
+            "x-algolia-application-id": ALGOLIA_APP_ID,
+            "x-algolia-api-key": ALGOLIA_API_KEY,
+            "Content-Type": "application/json",
+        },
+        json={
+            "query": keyword,
+            "hitsPerPage": count,
+            "attributesToRetrieve": [
+                "name", "price", "rating", "ratingCount", "id",
+                "sellerName", "storeUrlName", "thumbnailUrl",
+                "isBestSeller", "previewImages", "gradeMin", "gradeMax",
+                "subjectList", "resourceTypeList",
+            ],
+        },
+        timeout=20,
+    )
+    resp.raise_for_status()
+    hits = resp.json().get("hits", [])
+    products = []
+    for r in hits:
+        name = r.get("name", "")
+        if not name:
+            continue
+        rid = r.get("id") or r.get("objectID") or ""
+        url = f"https://www.teacherspayteachers.com/Product/{rid}" if rid else ""
+        price_raw = r.get("price", 0)
+        price = float(price_raw) / 100 if isinstance(price_raw, int) and price_raw > 100 else float(price_raw or 0)
+        thumb = r.get("thumbnailUrl") or ""
+        if not thumb and r.get("previewImages"):
+            imgs = r["previewImages"]
+            thumb = imgs[0].get("url", "") if isinstance(imgs, list) and imgs else ""
+        now = datetime.now().isoformat()
+        products.append({
+            "title": str(name)[:200],
+            "url": url,
+            "price": price,
+            "rating": float(r.get("rating") or 0),
+            "reviews_total": int(r.get("ratingCount") or 0),
+            "reviews_30j": 0,
+            "favoris": 0,
+            "downloads": 0,
+            "has_bestseller": bool(r.get("isBestSeller")),
+            "has_image": bool(thumb),
+            "desc_words": 200,
+            "thumbnail": thumb,
+            "shop_name": r.get("sellerName") or "",
+            "shop_url": f"https://www.teacherspayteachers.com/Store/{r.get('storeUrlName', '')}",
+            "grade_level": f"{r.get('gradeMin', '')}-{r.get('gradeMax', '')}".strip("-"),
+            "category": ", ".join((r.get("subjectList") or [])[:2]),
+            "date_published": "",
+            "keyword_searched": keyword,
+            "scraped_at": now,
+        })
+    return products
+
+
 DATABASE_URL = os.getenv("DATABASE_URL", "")
 
 async def db_get_products(q="", limit=50, offset=0, category="", shop_name=""):
@@ -369,12 +441,27 @@ async def get_products(
     q: str = "", limit: int = Query(50, le=200), offset: int = 0,
     category: str = "", shop_name: str = "",
 ):
+    keyword = q or category or shop_name or "math"
+
+    # 1. Try DB cache
     products = await db_get_products(q=q, limit=limit, offset=offset,
                                       category=category, shop_name=shop_name)
     if products:
-        return [enrich(p, q or category) for p in products]
-    # Always return mock data
-    keyword = q or category or shop_name or "math"
+        return [enrich(p, keyword) for p in products]
+
+    # 2. Live Algolia call
+    try:
+        loop = asyncio.get_event_loop()
+        live = await loop.run_in_executor(None, fetch_algolia, keyword, min(limit, 40))
+        if live:
+            enriched = [enrich(p, keyword) for p in live]
+            # Cache to DB async
+            asyncio.create_task(db_upsert_many(live))
+            return enriched
+    except Exception as e:
+        print(f"[products] Algolia failed: {e}")
+
+    # 3. Mock fallback
     return generate_mock(keyword, count=min(limit, 30))
 
 @app.get("/api/product/{product_id}")
@@ -513,6 +600,51 @@ async def export_csv(q: str = "", category: str = ""):
     fname = f"tpt_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv",
                              headers={"Content-Disposition": f"attachment; filename={fname}"})
+
+# ── Debug ──
+
+@app.get("/api/debug/algolia")
+async def debug_algolia(q: str = "math"):
+    """Test Algolia connectivity. Visit /api/debug/algolia in browser to diagnose."""
+    import base64
+    try:
+        key_decoded = base64.b64decode(ALGOLIA_API_KEY).decode()
+    except Exception:
+        key_decoded = "(not base64)"
+    try:
+        loop = asyncio.get_event_loop()
+        products = await loop.run_in_executor(None, fetch_algolia, q, 3)
+        return {
+            "status": "success",
+            "products_count": len(products),
+            "algolia_app_id": ALGOLIA_APP_ID,
+            "algolia_index": ALGOLIA_INDEX,
+            "key_preview": ALGOLIA_API_KEY[:20] + "...",
+            "key_decoded_preview": key_decoded[:60] + "...",
+            "sample_product": products[0] if products else None,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "error": str(e),
+            "algolia_app_id": ALGOLIA_APP_ID,
+            "algolia_index": ALGOLIA_INDEX,
+            "fix": "Set TPT_ALGOLIA_KEY env var with a fresh key from Chrome DevTools on teacherspayteachers.com",
+        }
+
+@app.post("/api/scrape/keyword")
+async def scrape_keyword(q: str = ""):
+    if not q:
+        raise HTTPException(status_code=400, detail="Keyword required")
+    try:
+        loop = asyncio.get_event_loop()
+        products = await loop.run_in_executor(None, fetch_algolia, q, 40)
+        if not products:
+            products = generate_mock(q, count=20)
+        await db_upsert_many(products)
+        return {"status": "done", "keyword": q, "count": len(products)}
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 # ── Health ──
 
