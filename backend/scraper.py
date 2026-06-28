@@ -868,6 +868,137 @@ def generate_mock_products(keyword: str, count: int = 20) -> List[Dict]:
     return products
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# Category-based scraping (TPT official URLs)
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Shared state for tracking a running category scrape
+_scrape_status: Dict[str, Any] = {
+    "running": False,
+    "progress": 0,
+    "total": 0,
+    "current": "",
+    "products_saved": 0,
+    "errors": 0,
+    "started_at": None,
+    "finished_at": None,
+}
+
+
+def _fetch_tpt_category(tpt_url: str, sort_order: str, page: int) -> str:
+    """Fetch a TPT category browse page via ScrapingBee."""
+    full_url = f"https://www.teacherspayteachers.com{tpt_url}?order={requests.utils.quote(sort_order)}&page={page}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        resp = requests.get(full_url, headers=headers, timeout=30, allow_redirects=True)
+        if resp.status_code == 200 and "apolloState" in resp.text:
+            return resp.text
+    except Exception:
+        pass
+
+    if not SCRAPINGBEE_KEY:
+        raise RuntimeError("SCRAPINGBEE_API_KEY not set")
+
+    resp = requests.get(
+        SCRAPINGBEE_URL,
+        params={
+            "api_key": SCRAPINGBEE_KEY,
+            "url": full_url,
+            "render_js": "false",
+            "block_ads": "true",
+        },
+        timeout=60,
+    )
+    resp.raise_for_status()
+    return resp.text
+
+
+def scrape_category_url(tpt_url: str, category_name: str, category_id: str,
+                        sort_order: str = "Most-Reviewed", page: int = 1) -> List[Dict]:
+    """Scrape one page of a TPT category URL and return enriched products."""
+    try:
+        html = _fetch_tpt_category(tpt_url, sort_order, page)
+        products = _extract_apollo_products(html)
+        if not products:
+            print(f"[scraper] ⚠️ No products from {tpt_url} sort={sort_order} page={page}")
+            return []
+        keyword = tpt_url.rstrip("/").split("/")[-1]
+        enriched = _finalize(products, keyword)
+        for p in enriched:
+            p["category"] = category_name
+            p["category_id"] = category_id
+            p["category_url"] = tpt_url
+            p["sort_order"] = sort_order
+            p["page"] = page
+        print(f"[scraper] ✅ {len(enriched)} products from {tpt_url} sort={sort_order} page={page}")
+        return enriched
+    except Exception as e:
+        print(f"[scraper] ❌ {tpt_url} sort={sort_order} page={page}: {e}")
+        return []
+
+
+def scrape_all_categories(delay: float = 2.5) -> None:
+    """
+    Scrape all TPT leaf categories. Runs in a background thread.
+    Imports categories_data to avoid circular imports at module load.
+    """
+    import time
+    from categories_data import TPT_LEAF_CATEGORIES, SORT_ORDERS
+
+    global _scrape_status
+
+    total_requests = sum(cat["pages"] * len(SORT_ORDERS) for cat in TPT_LEAF_CATEGORIES)
+    _scrape_status.update({
+        "running": True,
+        "progress": 0,
+        "total": total_requests,
+        "products_saved": 0,
+        "errors": 0,
+        "started_at": datetime.now().isoformat(),
+        "finished_at": None,
+    })
+
+    done = 0
+    for cat in TPT_LEAF_CATEGORIES:
+        if not _scrape_status["running"]:
+            break
+        for sort in SORT_ORDERS:
+            for page in range(1, cat["pages"] + 1):
+                if not _scrape_status["running"]:
+                    break
+                _scrape_status["current"] = f"{cat['name']} / {sort} / page {page}"
+                products = scrape_category_url(cat["url"], cat["name"], cat["id"], sort, page)
+                _scrape_status["products_saved"] += len(products)
+                if not products:
+                    _scrape_status["errors"] += 1
+                done += 1
+                _scrape_status["progress"] = done
+                # Store products in DB synchronously via a new event loop call
+                if products:
+                    try:
+                        loop = asyncio.new_event_loop()
+                        async def _save(prods):
+                            from database import upsert_product
+                            for p in prods:
+                                try:
+                                    await upsert_product(p)
+                                except Exception:
+                                    pass
+                        loop.run_until_complete(_save(products))
+                        loop.close()
+                    except Exception as e:
+                        print(f"[scraper] DB save error: {e}")
+                time.sleep(delay)
+
+    _scrape_status["running"] = False
+    _scrape_status["finished_at"] = datetime.now().isoformat()
+    print(f"[scraper] Category scrape complete: {_scrape_status['products_saved']} products saved, {_scrape_status['errors']} errors")
+
+
 async def preload_demo_data():
     """Pre-load data for all categories on first startup."""
     try:

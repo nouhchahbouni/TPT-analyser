@@ -263,6 +263,28 @@ async def scrape_keyword_endpoint(q: str, background_tasks: BackgroundTasks, syn
     return {"status": "started", "keyword": q}
 
 
+@app.post("/api/scrape/categories")
+async def scrape_categories_endpoint(background_tasks: BackgroundTasks):
+    """Launch a full category scrape in the background (~930 requests, ~40 min)."""
+    if sc._scrape_status.get("running"):
+        return {"status": "already_running", **sc._scrape_status}
+    background_tasks.add_task(sc.scrape_all_categories)
+    return {"status": "started", "message": "Category scrape launched in background. Check /api/scrape/categories/status for progress."}
+
+
+@app.get("/api/scrape/categories/status")
+async def scrape_categories_status():
+    """Return the current status of an ongoing (or last completed) category scrape."""
+    return sc._scrape_status
+
+
+@app.post("/api/scrape/categories/stop")
+async def scrape_categories_stop():
+    """Signal the running category scrape to stop after the current request."""
+    sc._scrape_status["running"] = False
+    return {"status": "stop_requested"}
+
+
 @app.post("/api/scrape/store")
 async def scrape_store_endpoint(name: str, background_tasks: BackgroundTasks):
     if not name:
