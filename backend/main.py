@@ -17,6 +17,7 @@ from datetime import datetime
 import database as db
 import scraper as sc
 from calculator import enrich_product, get_momentum_label
+from algorithms import enrich_product_full
 from models import SaveProductRequest, DashboardStats
 
 app = FastAPI(title="TPT Analyzer API", version="1.0.0")
@@ -47,10 +48,11 @@ async def startup():
 @app.get("/api/products")
 async def get_products(
     q: str = "",
-    limit: int = Query(50, le=200),
+    limit: int = Query(50, le=300),
     offset: int = 0,
     category: str = "",
     shop_name: str = "",
+    category_url: str = "",
     background_tasks: BackgroundTasks = None,
 ):
     keyword = q or category or shop_name or "math"
@@ -58,7 +60,8 @@ async def get_products(
     # 1. Try the database (fast, cached results)
     try:
         products = await db.get_products(q=q, limit=limit, offset=offset,
-                                         category=category, shop_name=shop_name)
+                                         category=category, shop_name=shop_name,
+                                         category_url=category_url)
         enriched = [enrich_product(p, keyword) for p in products]
     except Exception as e:
         print(f"[products] DB error: {e}")
@@ -73,7 +76,6 @@ async def get_products(
             )
             if live_products:
                 enriched = live_products
-                # Cache in DB in background
                 async def _store(prods):
                     for p in prods:
                         try:
@@ -86,11 +88,30 @@ async def get_products(
         except Exception as e:
             print(f"[products] Algolia live call failed: {e}")
 
-    # 3. Ultimate fallback: mock data (always shows something)
+    # 3. Ultimate fallback: mock data
     if not enriched:
         enriched = sc.generate_mock_products(keyword, count=20)
         for p in enriched:
             p["_source"] = "mock"
+
+    # 4. Enrich with full indicators
+    try:
+        enriched_full = []
+        for p in enriched:
+            try:
+                shop_slug = p.get("shop_slug") or ""
+                if not shop_slug and p.get("shop_url"):
+                    shop_slug = p["shop_url"].rstrip("/").split("/")[-1]
+                store = await db.get_store(shop_slug) if shop_slug else {}
+                yesterday_reviews = await db.get_yesterday_reviews(p.get("url", ""))
+                p_enriched = enrich_product_full(p, store, yesterday_reviews, enriched)
+                enriched_full.append(p_enriched)
+            except Exception as e2:
+                print(f"[products] enrich_product_full error: {e2}")
+                enriched_full.append(p)
+        enriched = enriched_full
+    except Exception as e:
+        print(f"[products] full enrichment error: {e}")
 
     return enriched
 
@@ -268,7 +289,22 @@ async def scrape_categories_endpoint(background_tasks: BackgroundTasks):
     """Launch a full category scrape in the background (~930 requests, ~40 min)."""
     if sc._scrape_status.get("running"):
         return {"status": "already_running", **sc._scrape_status}
-    background_tasks.add_task(sc.scrape_all_categories)
+    async def _scrape_then_enrich():
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, sc.scrape_all_categories)
+        # After category scrape, enrich top 300
+        try:
+            products = await db.get_products(limit=300)
+            for p in products:
+                try:
+                    await db.save_review_snapshot(p.get("url", ""), p.get("reviews_total", 0))
+                except Exception:
+                    pass
+            print("[scrape] Auto-enrich: saved review snapshots for top 300 products")
+        except Exception as e:
+            print(f"[scrape] auto-enrich error: {e}")
+
+    background_tasks.add_task(_scrape_then_enrich)
     return {"status": "started", "message": "Category scrape launched in background. Check /api/scrape/categories/status for progress."}
 
 
@@ -283,6 +319,52 @@ async def scrape_categories_stop():
     """Signal the running category scrape to stop after the current request."""
     sc._scrape_status["running"] = False
     return {"status": "stop_requested"}
+
+
+@app.post("/api/scrape/enrich")
+async def scrape_enrich_endpoint(background_tasks: BackgroundTasks, top_n: int = 300):
+    """Enrich top N products with product page + store page data."""
+    async def _enrich_task(n: int):
+        try:
+            products = await db.get_products(limit=n)
+            scraped_stores = set()
+            today = datetime.now().strftime("%Y-%m-%d")
+            for p in products:
+                try:
+                    # Save review snapshot
+                    await db.save_review_snapshot(p.get("url", ""), p.get("reviews_total", 0))
+                except Exception:
+                    pass
+                try:
+                    # Scrape product page
+                    product_data = await asyncio.get_event_loop().run_in_executor(
+                        None, sc.scrape_product_page, p.get("url", "")
+                    )
+                    p.update(product_data)
+                    await db.upsert_product(p)
+                except Exception as e:
+                    print(f"[enrich] product page error: {e}")
+                # Scrape store page if not done today
+                shop_slug = p.get("shop_slug") or ""
+                if not shop_slug and p.get("shop_url"):
+                    shop_slug = p["shop_url"].rstrip("/").split("/")[-1]
+                if shop_slug and shop_slug not in scraped_stores:
+                    try:
+                        existing = await db.get_store(shop_slug)
+                        if existing.get("scraped_at", "")[:10] != today:
+                            store_data = await asyncio.get_event_loop().run_in_executor(
+                                None, sc.scrape_store_page, shop_slug
+                            )
+                            await db.upsert_store(store_data)
+                        scraped_stores.add(shop_slug)
+                    except Exception as e:
+                        print(f"[enrich] store page error: {e}")
+            print(f"[enrich] Done enriching {len(products)} products")
+        except Exception as e:
+            print(f"[enrich] task error: {e}")
+
+    background_tasks.add_task(_enrich_task, top_n)
+    return {"status": "started", "top_n": top_n, "message": "Enrichment launched in background"}
 
 
 @app.post("/api/scrape/store")

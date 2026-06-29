@@ -790,6 +790,261 @@ def scrape_store_sync(store_name: str, count: int = 20) -> List[Dict]:
         p["shop_url"] = f"https://www.teacherspayteachers.com/Store/{store_name}"
     return mock
 
+def scrape_product_page(product_url: str) -> dict:
+    """Fetch a product page and extract extra fields from apolloState."""
+    default = {
+        "favorites": 0,
+        "date_published": "",
+        "days_since_update": 90,
+        "description_length": 0,
+        "has_common_core": False,
+        "preview_count": 0,
+    }
+    try:
+        # Reuse _fetch_tpt_category logic but for a direct URL
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        html = None
+        try:
+            resp = requests.get(product_url, headers=headers, timeout=30, allow_redirects=True)
+            if resp.status_code == 200:
+                html = resp.text
+        except Exception as e:
+            print(f"[scraper] product page direct fetch failed: {e}")
+
+        if not html and SCRAPINGBEE_KEY:
+            resp = requests.get(
+                SCRAPINGBEE_URL,
+                params={"api_key": SCRAPINGBEE_KEY, "url": product_url, "render_js": "false", "block_ads": "true"},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            html = resp.text
+
+        if not html:
+            print(f"[scraper] could not fetch product page {product_url}")
+            return default
+
+        # Try apolloState first
+        m = re.search(r'"apolloState"\s*:\s*(\{)', html)
+        if m:
+            start = m.start(1)
+            depth = 0
+            end = start
+            for i in range(start, min(start + 3_000_000, len(html))):
+                c = html[i]
+                if c == '{': depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            try:
+                apollo = json.loads(html[start:end])
+                # Find the resource object — look for Resource: keys
+                resource = {}
+                for key, val in apollo.items():
+                    if key.startswith("Resource:") and isinstance(val, dict) and val.get("title"):
+                        resource = val
+                        break
+                if not resource:
+                    # Try ROOT_QUERY keys for resource(
+                    root = apollo.get("ROOT_QUERY", {})
+                    for key in root:
+                        if key.startswith("resource(") or key.startswith("product("):
+                            ref = root[key]
+                            if isinstance(ref, dict) and ref.get("__ref"):
+                                resource = apollo.get(ref["__ref"], {})
+                            break
+
+                result = dict(default)
+                # favorites
+                result["favorites"] = int(
+                    resource.get("wishlistsCount") or resource.get("favoritesCount") or resource.get("totalWishlists") or 0
+                )
+                # date_published
+                date_str = (resource.get("datePosted") or resource.get("dateCreated") or resource.get("publishedAt") or "")
+                result["date_published"] = str(date_str)[:10] if date_str else ""
+                # days_since_update
+                last_activity = resource.get("dateLastActivity") or resource.get("dateModified") or resource.get("lastUpdated")
+                if last_activity:
+                    try:
+                        from datetime import date
+                        la_str = str(last_activity)[:10]
+                        la_date = datetime.strptime(la_str, "%Y-%m-%d").date()
+                        result["days_since_update"] = (date.today() - la_date).days
+                    except Exception:
+                        pass
+                # description_length
+                desc = resource.get("description") or resource.get("body") or ""
+                result["description_length"] = len(str(desc).split()) if desc else 0
+                # has_common_core
+                standards = resource.get("standardTags") or resource.get("standards") or resource.get("commonCore") or []
+                if isinstance(standards, list):
+                    result["has_common_core"] = any("common core" in str(s).lower() or "ccss" in str(s).lower() for s in standards)
+                elif isinstance(standards, str):
+                    result["has_common_core"] = "common core" in standards.lower() or "ccss" in standards.lower()
+                # preview_count
+                assets = resource.get("assets", {}) if isinstance(resource.get("assets"), dict) else {}
+                previews = assets.get("previews") or assets.get("thumbnails") or resource.get("previewImages") or []
+                result["preview_count"] = len(previews) if isinstance(previews, list) else 0
+
+                print(f"[scraper] product page: favorites={result['favorites']}, desc_len={result['description_length']}, previews={result['preview_count']}")
+                return result
+            except Exception as e:
+                print(f"[scraper] product page apolloState parse error: {e}")
+
+        # Fallback: parse HTML with BeautifulSoup
+        soup = BeautifulSoup(html, "html.parser")
+        result = dict(default)
+        text = soup.get_text()
+        # Try to find wishlist/favorites count
+        m_fav = re.search(r'(\d[\d,]*)\s*(?:wish|favorit|saves)', text, re.I)
+        if m_fav:
+            result["favorites"] = int(m_fav.group(1).replace(",", ""))
+        # Description length from meta description
+        meta_desc = soup.find("meta", attrs={"name": "description"})
+        if meta_desc and meta_desc.get("content"):
+            result["description_length"] = len(meta_desc["content"].split())
+        print(f"[scraper] product page HTML fallback: {result}")
+        return result
+    except Exception as e:
+        print(f"[scraper] scrape_product_page error: {e}")
+        return default
+
+
+def scrape_store_page(store_slug: str) -> dict:
+    """Fetch a store page and extract store metrics from apolloState."""
+    default = {
+        "slug": store_slug,
+        "name": store_slug.replace("-", " ").title(),
+        "followers": 0,
+        "nb_products": 0,
+        "store_age_months": 0,
+        "store_rating": 0.0,
+        "store_reviews": 0,
+        "nb_bestsellers": 0,
+        "days_since_last_product": 30,
+    }
+    store_url = f"https://www.teacherspayteachers.com/Store/{store_slug}"
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        html = None
+        try:
+            resp = requests.get(store_url, headers=headers, timeout=30, allow_redirects=True)
+            if resp.status_code == 200:
+                html = resp.text
+        except Exception as e:
+            print(f"[scraper] store page direct fetch failed: {e}")
+
+        if not html and SCRAPINGBEE_KEY:
+            resp = requests.get(
+                SCRAPINGBEE_URL,
+                params={"api_key": SCRAPINGBEE_KEY, "url": store_url, "render_js": "false", "block_ads": "true"},
+                timeout=60,
+            )
+            resp.raise_for_status()
+            html = resp.text
+
+        if not html:
+            print(f"[scraper] could not fetch store page {store_url}")
+            return default
+
+        # Try apolloState
+        m = re.search(r'"apolloState"\s*:\s*(\{)', html)
+        if m:
+            start = m.start(1)
+            depth = 0
+            end = start
+            for i in range(start, min(start + 3_000_000, len(html))):
+                c = html[i]
+                if c == '{': depth += 1
+                elif c == '}':
+                    depth -= 1
+                    if depth == 0:
+                        end = i + 1
+                        break
+            try:
+                apollo = json.loads(html[start:end])
+                root = apollo.get("ROOT_QUERY", {})
+                seller_obj = {}
+                # Find seller/store object
+                for key in root:
+                    if key.startswith("seller(") or key.startswith("store("):
+                        ref = root[key]
+                        if isinstance(ref, dict) and ref.get("__ref"):
+                            seller_obj = apollo.get(ref["__ref"], {})
+                        elif isinstance(ref, dict):
+                            seller_obj = ref
+                        break
+                # Also check ResourceAuthor keys
+                if not seller_obj:
+                    for key, val in apollo.items():
+                        if key.startswith("ResourceAuthor:") and isinstance(val, dict):
+                            slug_val = val.get("slug", "")
+                            if slug_val == store_slug or not slug_val:
+                                seller_obj = val
+                                break
+
+                result = dict(default)
+                result["followers"] = int(seller_obj.get("followerCount") or seller_obj.get("followers") or 0)
+                result["nb_products"] = int(seller_obj.get("resourceCount") or seller_obj.get("productCount") or seller_obj.get("totalResources") or 0)
+                result["store_rating"] = float(seller_obj.get("averageRating") or seller_obj.get("overallRating") or 0)
+                result["store_reviews"] = int(seller_obj.get("totalEvaluations") or seller_obj.get("reviewCount") or 0)
+                result["nb_bestsellers"] = int(seller_obj.get("bestsellerCount") or seller_obj.get("totalBestsellers") or 0)
+                result["name"] = seller_obj.get("name") or result["name"]
+
+                # Store age in months
+                joined = seller_obj.get("dateJoined") or seller_obj.get("createdAt")
+                if joined:
+                    try:
+                        j_str = str(joined)[:10]
+                        j_date = datetime.strptime(j_str, "%Y-%m-%d")
+                        now = datetime.now()
+                        result["store_age_months"] = max(1, (now.year - j_date.year) * 12 + (now.month - j_date.month))
+                    except Exception:
+                        pass
+
+                # Days since last product
+                last_prod = seller_obj.get("lastResourceDate") or seller_obj.get("mostRecentProductDate")
+                if last_prod:
+                    try:
+                        from datetime import date
+                        lp_str = str(last_prod)[:10]
+                        lp_date = datetime.strptime(lp_str, "%Y-%m-%d").date()
+                        result["days_since_last_product"] = (date.today() - lp_date).days
+                    except Exception:
+                        pass
+
+                print(f"[scraper] store page: slug={store_slug}, followers={result['followers']}, products={result['nb_products']}")
+                return result
+            except Exception as e:
+                print(f"[scraper] store page apolloState parse error: {e}")
+
+        # Fallback: parse HTML
+        soup = BeautifulSoup(html, "html.parser")
+        result = dict(default)
+        text = soup.get_text()
+        m_fol = re.search(r'(\d[\d,]*)\s*followers', text, re.I)
+        if m_fol:
+            result["followers"] = int(m_fol.group(1).replace(",", ""))
+        m_prod = re.search(r'(\d[\d,]*)\s*(?:products|resources)', text, re.I)
+        if m_prod:
+            result["nb_products"] = int(m_prod.group(1).replace(",", ""))
+        print(f"[scraper] store page HTML fallback: {result}")
+        return result
+    except Exception as e:
+        print(f"[scraper] scrape_store_page error: {e}")
+        return default
+
+
 async def scrape_keyword(keyword: str, use_cache: bool = True) -> List[Dict]:
     loop = asyncio.get_event_loop()
     return await loop.run_in_executor(None, scrape_keyword_sync, keyword)

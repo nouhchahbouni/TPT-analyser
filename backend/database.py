@@ -47,9 +47,32 @@ async def init_db():
                     date_published TEXT DEFAULT '',
                     thumbnail TEXT DEFAULT '',
                     keyword_searched TEXT DEFAULT '',
-                    scraped_at TEXT DEFAULT ''
+                    scraped_at TEXT DEFAULT '',
+                    favorites INTEGER DEFAULT 0,
+                    days_since_update INTEGER DEFAULT 90,
+                    description_length INTEGER DEFAULT 0,
+                    has_common_core BOOLEAN DEFAULT FALSE,
+                    preview_count INTEGER DEFAULT 0,
+                    age_months INTEGER DEFAULT 12,
+                    category_url TEXT DEFAULT '',
+                    shop_slug TEXT DEFAULT ''
                 )
             """)
+            # Add new columns to existing tables (idempotent)
+            for col in [
+                "ADD COLUMN IF NOT EXISTS favorites INTEGER DEFAULT 0",
+                "ADD COLUMN IF NOT EXISTS days_since_update INTEGER DEFAULT 90",
+                "ADD COLUMN IF NOT EXISTS description_length INTEGER DEFAULT 0",
+                "ADD COLUMN IF NOT EXISTS has_common_core BOOLEAN DEFAULT FALSE",
+                "ADD COLUMN IF NOT EXISTS preview_count INTEGER DEFAULT 0",
+                "ADD COLUMN IF NOT EXISTS age_months INTEGER DEFAULT 12",
+                "ADD COLUMN IF NOT EXISTS category_url TEXT DEFAULT ''",
+                "ADD COLUMN IF NOT EXISTS shop_slug TEXT DEFAULT ''",
+            ]:
+                try:
+                    await conn.execute(f"ALTER TABLE products {col}")
+                except Exception:
+                    pass
             await conn.execute("""
                 CREATE TABLE IF NOT EXISTS saved_products (
                     id SERIAL PRIMARY KEY,
@@ -63,6 +86,29 @@ async def init_db():
                     keyword TEXT PRIMARY KEY,
                     scraped_at TEXT NOT NULL,
                     expires_at TEXT NOT NULL
+                )
+            """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS stores (
+                    slug TEXT PRIMARY KEY,
+                    name TEXT DEFAULT '',
+                    followers INTEGER DEFAULT 0,
+                    nb_products INTEGER DEFAULT 0,
+                    store_age_months INTEGER DEFAULT 0,
+                    store_rating FLOAT8 DEFAULT 0,
+                    store_reviews INTEGER DEFAULT 0,
+                    nb_bestsellers INTEGER DEFAULT 0,
+                    days_since_last_product INTEGER DEFAULT 30,
+                    scraped_at TEXT DEFAULT ''
+                )
+            """)
+            await conn.execute("""
+                CREATE TABLE IF NOT EXISTS review_snapshots (
+                    id SERIAL PRIMARY KEY,
+                    product_url TEXT NOT NULL,
+                    snapshot_date TEXT NOT NULL,
+                    reviews_count INTEGER DEFAULT 0,
+                    UNIQUE(product_url, snapshot_date)
                 )
             """)
         finally:
@@ -91,9 +137,32 @@ async def init_db():
                     date_published TEXT DEFAULT '',
                     thumbnail TEXT DEFAULT '',
                     keyword_searched TEXT DEFAULT '',
-                    scraped_at TEXT DEFAULT ''
+                    scraped_at TEXT DEFAULT '',
+                    favorites INTEGER DEFAULT 0,
+                    days_since_update INTEGER DEFAULT 90,
+                    description_length INTEGER DEFAULT 0,
+                    has_common_core INTEGER DEFAULT 0,
+                    preview_count INTEGER DEFAULT 0,
+                    age_months INTEGER DEFAULT 12,
+                    category_url TEXT DEFAULT '',
+                    shop_slug TEXT DEFAULT ''
                 )
             """)
+            # Add new columns to existing table (SQLite doesn't support IF NOT EXISTS on ALTER)
+            for col_def in [
+                "favorites INTEGER DEFAULT 0",
+                "days_since_update INTEGER DEFAULT 90",
+                "description_length INTEGER DEFAULT 0",
+                "has_common_core INTEGER DEFAULT 0",
+                "preview_count INTEGER DEFAULT 0",
+                "age_months INTEGER DEFAULT 12",
+                "category_url TEXT DEFAULT ''",
+                "shop_slug TEXT DEFAULT ''",
+            ]:
+                try:
+                    await db.execute(f"ALTER TABLE products ADD COLUMN {col_def}")
+                except Exception:
+                    pass
             await db.execute("""
                 CREATE TABLE IF NOT EXISTS saved_products (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -110,6 +179,29 @@ async def init_db():
                     expires_at TEXT NOT NULL
                 )
             """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS stores (
+                    slug TEXT PRIMARY KEY,
+                    name TEXT DEFAULT '',
+                    followers INTEGER DEFAULT 0,
+                    nb_products INTEGER DEFAULT 0,
+                    store_age_months INTEGER DEFAULT 0,
+                    store_rating REAL DEFAULT 0,
+                    store_reviews INTEGER DEFAULT 0,
+                    nb_bestsellers INTEGER DEFAULT 0,
+                    days_since_last_product INTEGER DEFAULT 30,
+                    scraped_at TEXT DEFAULT ''
+                )
+            """)
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS review_snapshots (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    product_url TEXT NOT NULL,
+                    snapshot_date TEXT NOT NULL,
+                    reviews_count INTEGER DEFAULT 0,
+                    UNIQUE(product_url, snapshot_date)
+                )
+            """)
             await db.commit()
 
 
@@ -120,7 +212,9 @@ async def upsert_product(product: Dict[str, Any]) -> int:
     fields = ["url", "title", "price", "rating", "reviews_total", "reviews_30j",
               "favoris", "downloads", "has_bestseller", "has_image", "desc_words",
               "category", "grade_level", "shop_name", "shop_url", "date_published",
-              "thumbnail", "keyword_searched", "scraped_at"]
+              "thumbnail", "keyword_searched", "scraped_at",
+              "favorites", "days_since_update", "description_length", "has_common_core",
+              "preview_count", "age_months", "category_url", "shop_slug"]
 
     if DATABASE_URL:
         conn = await _pg_conn()
@@ -171,7 +265,8 @@ async def upsert_product(product: Dict[str, Any]) -> int:
 # ─────────────────────────────── get_products ────────────────────────────────
 
 async def get_products(q: str = "", limit: int = 50, offset: int = 0,
-                       category: str = "", shop_name: str = "") -> List[Dict]:
+                       category: str = "", shop_name: str = "",
+                       category_url: str = "") -> List[Dict]:
     """Fetch products with optional filters."""
     if DATABASE_URL:
         conn = await _pg_conn()
@@ -193,6 +288,10 @@ async def get_products(q: str = "", limit: int = 50, offset: int = 0,
             if shop_name:
                 conditions.append(f"shop_name ILIKE ${idx}")
                 params.append(f"%{shop_name}%")
+                idx += 1
+            if category_url:
+                conditions.append(f"category_url = ${idx}")
+                params.append(category_url)
                 idx += 1
 
             where = "WHERE " + " AND ".join(conditions) if conditions else ""
@@ -221,6 +320,9 @@ async def get_products(q: str = "", limit: int = 50, offset: int = 0,
             if shop_name:
                 conditions.append("shop_name LIKE ?")
                 params.append(f"%{shop_name}%")
+            if category_url:
+                conditions.append("category_url = ?")
+                params.append(category_url)
 
             where = "WHERE " + " AND ".join(conditions) if conditions else ""
             params.extend([limit, offset])
@@ -384,6 +486,114 @@ async def get_db_stats() -> Dict:
             async with db.execute("SELECT AVG(rating) as avg_rating FROM products WHERE rating > 0") as c:
                 avg_rating = (await c.fetchone())["avg_rating"] or 0
             return {"total_products": total, "total_stores": stores, "avg_rating": round(avg_rating, 2)}
+
+
+# ─────────────────────────────── stores ──────────────────────────────────────
+
+async def upsert_store(store: Dict[str, Any]) -> None:
+    """Insert or update a store."""
+    fields = ["slug", "name", "followers", "nb_products", "store_age_months",
+              "store_rating", "store_reviews", "nb_bestsellers",
+              "days_since_last_product", "scraped_at"]
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            cols = ", ".join(fields)
+            placeholders = _pg_placeholders(fields)
+            update_set = ", ".join(f"{f} = EXCLUDED.{f}" for f in fields if f != "slug")
+            values = [store.get(f, "") for f in fields]
+            await conn.execute(
+                f"INSERT INTO stores ({cols}) VALUES ({placeholders}) ON CONFLICT (slug) DO UPDATE SET {update_set}",
+                *values
+            )
+        finally:
+            await conn.close()
+    else:
+        import aiosqlite
+        async with aiosqlite.connect(DB_PATH) as db:
+            cols = ", ".join(fields)
+            placeholders = ", ".join("?" for _ in fields)
+            set_clause = ", ".join(f"{f} = ?" for f in fields if f != "slug")
+            values = [store.get(f, "") for f in fields]
+            slug = store.get("slug", "")
+            async with db.execute("SELECT slug FROM stores WHERE slug = ?", (slug,)) as c:
+                row = await c.fetchone()
+            if row:
+                await db.execute(
+                    f"UPDATE stores SET {set_clause} WHERE slug = ?",
+                    [store.get(f, "") for f in fields if f != "slug"] + [slug]
+                )
+            else:
+                await db.execute(f"INSERT INTO stores ({cols}) VALUES ({placeholders})", values)
+            await db.commit()
+
+
+async def get_store(slug: str) -> Dict:
+    """Fetch a store by slug. Returns empty dict if not found."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            row = await conn.fetchrow("SELECT * FROM stores WHERE slug = $1", slug)
+            return dict(row) if row else {}
+        finally:
+            await conn.close()
+    else:
+        import aiosqlite
+        async with aiosqlite.connect(DB_PATH) as db:
+            db.row_factory = aiosqlite.Row
+            async with db.execute("SELECT * FROM stores WHERE slug = ?", (slug,)) as c:
+                row = await c.fetchone()
+                return dict(row) if row else {}
+
+
+# ─────────────────────────────── review snapshots ────────────────────────────
+
+async def save_review_snapshot(product_url: str, reviews_count: int) -> None:
+    """Save today's review count for a product."""
+    today = datetime.now().strftime("%Y-%m-%d")
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            await conn.execute(
+                """INSERT INTO review_snapshots (product_url, snapshot_date, reviews_count)
+                   VALUES ($1, $2, $3) ON CONFLICT (product_url, snapshot_date) DO UPDATE
+                   SET reviews_count = EXCLUDED.reviews_count""",
+                product_url, today, reviews_count
+            )
+        finally:
+            await conn.close()
+    else:
+        import aiosqlite
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                "INSERT OR REPLACE INTO review_snapshots (product_url, snapshot_date, reviews_count) VALUES (?, ?, ?)",
+                (product_url, today, reviews_count)
+            )
+            await db.commit()
+
+
+async def get_yesterday_reviews(product_url: str) -> int:
+    """Return review count from yesterday's snapshot (0 if no snapshot)."""
+    yesterday = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            row = await conn.fetchrow(
+                "SELECT reviews_count FROM review_snapshots WHERE product_url = $1 AND snapshot_date = $2",
+                product_url, yesterday
+            )
+            return row["reviews_count"] if row else 0
+        finally:
+            await conn.close()
+    else:
+        import aiosqlite
+        async with aiosqlite.connect(DB_PATH) as db:
+            async with db.execute(
+                "SELECT reviews_count FROM review_snapshots WHERE product_url = ? AND snapshot_date = ?",
+                (product_url, yesterday)
+            ) as c:
+                row = await c.fetchone()
+                return row[0] if row else 0
 
 
 # ─────────────────────────────── cache helpers ───────────────────────────────
