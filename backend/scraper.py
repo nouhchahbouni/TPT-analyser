@@ -1196,7 +1196,7 @@ def scrape_category_url(tpt_url: str, category_name: str, category_id: str,
         return []
 
 
-def scrape_all_categories(delay: float = 2.5) -> None:
+def scrape_all_categories(delay: float = 1.0, max_pages: int = 1) -> None:
     """
     Scrape all TPT leaf categories. Runs in a background thread.
     Imports categories_data to avoid circular imports at module load.
@@ -1206,7 +1206,8 @@ def scrape_all_categories(delay: float = 2.5) -> None:
 
     global _scrape_status
 
-    total_requests = sum(cat["pages"] * len(SORT_ORDERS) for cat in TPT_LEAF_CATEGORIES)
+    pages_per_cat = max_pages
+    total_requests = len(TPT_LEAF_CATEGORIES) * len(SORT_ORDERS) * pages_per_cat
     _scrape_status.update({
         "running": True,
         "progress": 0,
@@ -1222,7 +1223,7 @@ def scrape_all_categories(delay: float = 2.5) -> None:
         if not _scrape_status["running"]:
             break
         for sort in SORT_ORDERS:
-            for page in range(1, cat["pages"] + 1):
+            for page in range(1, pages_per_cat + 1):
                 if not _scrape_status["running"]:
                     break
                 _scrape_status["current"] = f"{cat['name']} / {sort} / page {page}"

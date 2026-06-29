@@ -285,13 +285,17 @@ async def scrape_keyword_endpoint(q: str, background_tasks: BackgroundTasks, syn
 
 
 @app.post("/api/scrape/categories")
-async def scrape_categories_endpoint(background_tasks: BackgroundTasks):
-    """Launch a full category scrape in the background (~930 requests, ~40 min)."""
+async def scrape_categories_endpoint(
+    background_tasks: BackgroundTasks,
+    delay: float = Query(1.0, description="Seconds between requests"),
+    max_pages: int = Query(1, description="Max pages per category (1=fast, 3=full)"),
+):
+    """Launch a full category scrape in the background."""
     if sc._scrape_status.get("running"):
         return {"status": "already_running", **sc._scrape_status}
     async def _scrape_then_enrich():
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, sc.scrape_all_categories)
+        await loop.run_in_executor(None, sc.scrape_all_categories, delay, max_pages)
         # After category scrape, enrich top 300
         try:
             products = await db.get_products(limit=300)
@@ -305,7 +309,15 @@ async def scrape_categories_endpoint(background_tasks: BackgroundTasks):
             print(f"[scrape] auto-enrich error: {e}")
 
     background_tasks.add_task(_scrape_then_enrich)
-    return {"status": "started", "message": "Category scrape launched in background. Check /api/scrape/categories/status for progress."}
+    est_minutes = round(len(sc._scrape_status.get("total", 0) and [1] or [len(__import__('categories_data').TPT_LEAF_CATEGORIES) * 3 * max_pages]) * delay / 60, 1)
+    return {
+        "status": "started",
+        "delay": delay,
+        "max_pages": max_pages,
+        "estimated_requests": len(__import__('categories_data').TPT_LEAF_CATEGORIES) * 3 * max_pages,
+        "estimated_minutes": round(len(__import__('categories_data').TPT_LEAF_CATEGORIES) * 3 * max_pages * delay / 60, 1),
+        "message": "Category scrape launched. Check /api/scrape/categories/status for progress.",
+    }
 
 
 @app.get("/api/scrape/categories/status")
