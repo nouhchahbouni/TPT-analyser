@@ -1,55 +1,107 @@
 import React, { useEffect, useState, useMemo } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
 import StatCard from '../components/StatCard.jsx'
 import ProductTable from '../components/ProductTable.jsx'
+import MomentumBadge from '../components/MomentumBadge.jsx'
 
-const MOMENTUM_OPTS = [
-  { value: '', label: 'Tous' },
-  { value: 'exploding', label: '🔥 Exploding' },
-  { value: 'growing', label: '📈 Growing' },
-  { value: 'stable', label: '➡️ Stable' },
-  { value: 'declining', label: '📉 Declining' },
-]
+const CATEGORY_ICONS = {
+  'math': '📐', 'Math': '📐', 'ela': '📖', 'ELA': '📖',
+  'science': '🔬', 'Science': '🔬', 'social studies': '🌍', 'Social Studies': '🌍',
+  'sel': '💚', 'SEL': '💚', 'back to school': '🎒', 'Back To School': '🎒',
+  'teacher tools': '🛠️', 'Teacher Tools': '🛠️', 'classroom decor': '🎨', 'Classroom Decor': '🎨',
+  'special education': '⭐', 'Special Education': '⭐', 'foreign language': '🌐', 'Foreign Language': '🌐',
+}
 
-const BADGE_OPTS = [
-  { value: '', label: 'Tous' },
-  { value: '👑 Dominant', label: '👑 Dominant' },
-  { value: '✅ Solide', label: '✅ Solide' },
-  { value: '⚠️ Moyen', label: '⚠️ Moyen' },
-  { value: '🌱 Débutant', label: '🌱 Débutant' },
-]
+function getCatIcon(cat) {
+  if (!cat) return '📚'
+  const key = Object.keys(CATEGORY_ICONS).find(k => cat.toLowerCase().includes(k.toLowerCase()))
+  return key ? CATEGORY_ICONS[key] : '📚'
+}
 
-const GRADE_OPTS = [
-  '', 'PreK', 'K', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th',
-  '9th', '10th', '11th', '12th',
-]
+const MOMENTUM_EMOJIS = ['🔥', '📈', '➡️', '📉']
+const STORE_BADGES = ['👑 Dominant', '✅ Solide', '⚠️ Moyen', '🌱 Débutant']
+
+const styles = {
+  banner: {
+    background: 'linear-gradient(135deg, #1BA94C 0%, #0D7A35 100%)',
+    borderRadius: 12, padding: '24px 32px', color: '#fff',
+    marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+  },
+  bannerTitle: { fontSize: 22, fontWeight: 700, marginBottom: 4 },
+  bannerSub: { fontSize: 14, opacity: 0.85 },
+  statGrid: { display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 },
+  section: { marginBottom: 24 },
+  sectionHeader: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
+  sectionTitle: { fontSize: 16, fontWeight: 700, color: '#2D2D2D' },
+  viewAll: { fontSize: 13, color: '#1BA94C', fontWeight: 600, cursor: 'pointer', background: 'none', border: 'none' },
+  catGrid: { display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 },
+  catCard: {
+    background: '#FFFFFF', border: '1px solid #E0E0E0', borderRadius: 10,
+    padding: '16px', textAlign: 'center', cursor: 'pointer', transition: 'all 0.2s',
+  },
+  twoCol: { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 },
+  oppRow: {
+    display: 'flex', alignItems: 'center', gap: 10,
+    padding: '10px 0', borderBottom: '1px solid #F0F0F0',
+  },
+  oppRank: {
+    width: 24, height: 24, borderRadius: '50%', background: '#1BA94C', color: '#fff',
+    fontSize: 11, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+  },
+  oppTitle: { fontSize: 12, fontWeight: 600, color: '#2D2D2D', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+  card: { background: '#FFFFFF', border: '1px solid #E0E0E0', borderRadius: 12, padding: 16 },
+  filtersBar: {
+    display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center',
+    background: '#fff', border: '1px solid #E0E0E0', borderRadius: 10,
+    padding: '10px 14px', marginBottom: 16,
+  },
+  filterLabel: { fontSize: 12, color: '#666', fontWeight: 600 },
+  filterSelect: { fontSize: 12, padding: '4px 8px', borderRadius: 6, border: '1px solid #E0E0E0', cursor: 'pointer' },
+  filterInput: { width: 60, fontSize: 12, padding: '4px 6px', borderRadius: 6, border: '1px solid #E0E0E0' },
+  momBtn: (active) => ({
+    fontSize: 16, padding: '2px 6px', borderRadius: 6, border: '1px solid',
+    borderColor: active ? '#1BA94C' : '#E0E0E0', background: active ? '#E8F5E9' : '#fff',
+    cursor: 'pointer',
+  }),
+}
 
 export default function Dashboard() {
-  const [allProducts, setAllProducts] = useState([])
+  const navigate = useNavigate()
   const [stats, setStats] = useState(null)
+  const [trending, setTrending] = useState([])
+  const [categories, setCategories] = useState([])
+  const [allProducts, setAllProducts] = useState([])
   const [loading, setLoading] = useState(true)
 
   // Filters
   const [filterCat, setFilterCat] = useState('')
-  const [filterGrade, setFilterGrade] = useState('')
   const [filterMomentum, setFilterMomentum] = useState('')
-  const [filterBadge, setFilterBadge] = useState('')
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
-  const [minOpportunity, setMinOpportunity] = useState(0)
+  const [oppMin, setOppMin] = useState(0)
+  const [filterBadge, setFilterBadge] = useState('')
 
   useEffect(() => {
     const load = async () => {
       setLoading(true)
       try {
-        const [prodRes, statRes] = await Promise.all([
-          axios.get('/api/products', { params: { limit: 300 } }),
-          axios.get('/api/stats'),
+        const [statsRes, trendRes, catRes, prodRes] = await Promise.all([
+          axios.get('/api/stats').catch(() => ({ data: {} })),
+          axios.get('/api/trending?limit=10').catch(() => ({ data: [] })),
+          axios.get('/api/categories').catch(() => ({ data: [] })),
+          axios.get('/api/products?limit=300').catch(() => ({ data: [] })),
         ])
-        setAllProducts(prodRes.data || [])
-        setStats(statRes.data || null)
-      } catch (e) {
-        console.error(e)
+        setStats(statsRes.data)
+        setTrending(Array.isArray(trendRes.data) ? trendRes.data : trendRes.data.trending || [])
+        setCategories((Array.isArray(catRes.data) ? catRes.data : catRes.data.categories || []).slice(0, 10))
+        const prods = Array.isArray(prodRes.data) ? prodRes.data : prodRes.data.products || []
+        const sorted = [...prods].sort((a, b) => {
+          const as = a.indicators?.final_opportunity_score ?? 0
+          const bs = b.indicators?.final_opportunity_score ?? 0
+          return bs - as
+        })
+        setAllProducts(sorted)
       } finally {
         setLoading(false)
       }
@@ -57,148 +109,135 @@ export default function Dashboard() {
     load()
   }, [])
 
-  // Unique categories from products
-  const categories = useMemo(() => {
-    const cats = [...new Set(allProducts.map(p => p.category).filter(Boolean))]
-    return cats.sort()
+  const uniqueCategories = useMemo(() => {
+    const cats = new Set(allProducts.map(p => p.category).filter(Boolean))
+    return Array.from(cats).sort()
   }, [allProducts])
 
-  // Filtered + sorted products
-  const displayed = useMemo(() => {
+  const filteredProducts = useMemo(() => {
     return allProducts
       .filter(p => !filterCat || p.category === filterCat)
-      .filter(p => !filterGrade || (p.grade_level || '').includes(filterGrade))
-      .filter(p => !filterMomentum || p.indicators?.momentum?.status === filterMomentum)
-      .filter(p => !filterBadge || (p.store?.badge || '') === filterBadge)
+      .filter(p => !filterMomentum || p.indicators?.momentum_emoji === filterMomentum)
       .filter(p => !priceMin || p.price >= parseFloat(priceMin))
       .filter(p => !priceMax || p.price <= parseFloat(priceMax))
-      .filter(p => (p.indicators?.final_opportunity_score ?? 0) >= minOpportunity)
-      .sort((a, b) => (b.indicators?.final_opportunity_score ?? 0) - (a.indicators?.final_opportunity_score ?? 0))
-      .slice(0, 300)
-  }, [allProducts, filterCat, filterGrade, filterMomentum, filterBadge, priceMin, priceMax, minOpportunity])
+      .filter(p => (p.indicators?.final_opportunity_score ?? 0) >= oppMin)
+      .filter(p => !filterBadge || p.store_indicators?.badge === filterBadge)
+  }, [allProducts, filterCat, filterMomentum, priceMin, priceMax, oppMin, filterBadge])
 
-  const statsData = stats ? [
-    { label: 'Produits analysés', value: stats.total_products?.toLocaleString() || '0', icon: '📦', color: '#1BA94C' },
-    { label: 'Trending 🔥', value: stats.trending_count || '0', icon: '🔥', color: '#E53935' },
-    { label: 'Top revenue/mois', value: stats.top_revenue ? '$' + stats.top_revenue.toLocaleString() : '—', icon: '💰', color: '#FF8F00' },
-    { label: 'Meilleure catégorie', value: stats.best_category || '—', icon: '🏆', color: '#7B1FA2' },
-  ] : []
-
-  const resetFilters = () => {
-    setFilterCat(''); setFilterGrade(''); setFilterMomentum('')
-    setFilterBadge(''); setPriceMin(''); setPriceMax(''); setMinOpportunity(0)
-  }
-
-  const hasFilters = filterCat || filterGrade || filterMomentum || filterBadge || priceMin || priceMax || minOpportunity > 0
+  const now = new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 
   return (
-    <div style={{ padding: '0 0 40px' }}>
-
+    <div className="fade-in">
       {/* Banner */}
-      <div style={{
-        background: 'linear-gradient(135deg, #1BA94C 0%, #0D7A35 100%)',
-        borderRadius: 12, padding: '24px 32px', color: '#fff',
-        marginBottom: 24, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      }}>
+      <div style={styles.banner}>
         <div>
-          <div style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>
-            🔥 Top produits TPT — Mis à jour ce matin
-          </div>
-          <div style={{ fontSize: 14, opacity: 0.85 }}>
-            Classés par Score Opportunité · Données réelles TeachersPayTeachers
-          </div>
+          <div style={styles.bannerTitle}>TPT Analyzer — What's Hot Right Now 🔥</div>
+          <div style={styles.bannerSub}>Market intelligence updated {now}</div>
         </div>
-        <button
-          onClick={() => axios.post('/api/scrape/enrich').then(() => window.location.reload())}
-          style={{
-            background: 'rgba(255,255,255,0.2)', color: '#fff', border: '1px solid rgba(255,255,255,0.4)',
-            borderRadius: 8, padding: '8px 16px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
-          }}
-        >
-          ↻ Actualiser
-        </button>
+        <div style={{ textAlign: 'right' }}>
+          <div style={{ fontSize: 32, fontWeight: 700 }}>{stats?.total_products?.toLocaleString() || '—'}</div>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Products Tracked</div>
+        </div>
       </div>
 
-      {/* Stats */}
-      {stats && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16, marginBottom: 24 }}>
-          {statsData.map(s => <StatCard key={s.label} {...s} />)}
+      {/* Stat Cards */}
+      <div style={styles.statGrid}>
+        <StatCard label="Products Analyzed" value={loading ? '…' : (stats?.total_products || 0).toLocaleString()} icon="📊" sub="In database" accent="#1BA94C" />
+        <StatCard label="🔥 Trending Today" value={loading ? '…' : (stats?.trending_count || 0)} icon="🔥" sub="Momentum > 15%" accent="#E8463A" />
+        <StatCard label="Top Revenue / Month" value={loading ? '…' : `$${(stats?.top_revenue || 0).toFixed(0)}`} icon="💰" sub="Single product" accent="#FF8F00" />
+        <StatCard label="Best Category" value={loading ? '…' : (stats?.best_category || 'Math')} icon="📚" sub={`Avg optim: ${stats?.avg_optim_score || 0}/100`} accent="#0D7A35" />
+      </div>
+
+      {/* Top Products Section */}
+      <div style={styles.section}>
+        <div style={styles.sectionHeader}>
+          <span style={styles.sectionTitle}>🔥 Top produits TPT — Mis à jour ce matin</span>
+          <span style={{ fontSize: 12, color: '#888' }}>{filteredProducts.length} produits</span>
         </div>
-      )}
 
-      {/* Filtres */}
-      <div style={{
-        background: '#fff', border: '1px solid #E0E0E0', borderRadius: 10,
-        padding: '14px 16px', marginBottom: 16,
-        display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center',
-      }}>
-        {/* Catégorie */}
-        <select value={filterCat} onChange={e => setFilterCat(e.target.value)}
-          style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #E0E0E0' }}>
-          <option value="">Toutes catégories</option>
-          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-        </select>
+        {/* Filters */}
+        <div style={styles.filtersBar}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={styles.filterLabel}>Catégorie</span>
+            <select value={filterCat} onChange={e => setFilterCat(e.target.value)} style={styles.filterSelect}>
+              <option value="">All</option>
+              {uniqueCategories.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <span style={styles.filterLabel}>Momentum</span>
+            {MOMENTUM_EMOJIS.map(em => (
+              <button key={em} style={styles.momBtn(filterMomentum === em)}
+                onClick={() => setFilterMomentum(f => f === em ? '' : em)}>{em}</button>
+            ))}
+            {filterMomentum && <button onClick={() => setFilterMomentum('')} style={{ fontSize: 11, color: '#999', background: 'none', border: 'none', cursor: 'pointer' }}>All</button>}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={styles.filterLabel}>Prix</span>
+            <input type="number" placeholder="Min" value={priceMin} onChange={e => setPriceMin(e.target.value)} style={styles.filterInput} />
+            <span style={{ fontSize: 12, color: '#999' }}>–</span>
+            <input type="number" placeholder="Max" value={priceMax} onChange={e => setPriceMax(e.target.value)} style={styles.filterInput} />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={styles.filterLabel}>Opp. min</span>
+            <input type="range" min={0} max={100} value={oppMin} onChange={e => setOppMin(Number(e.target.value))} style={{ width: 80 }} />
+            <span style={{ fontSize: 12, fontWeight: 600, color: '#1BA94C' }}>{oppMin}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={styles.filterLabel}>Store badge</span>
+            <select value={filterBadge} onChange={e => setFilterBadge(e.target.value)} style={styles.filterSelect}>
+              <option value="">All</option>
+              {STORE_BADGES.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
+          </div>
+        </div>
 
-        {/* Grade */}
-        <select value={filterGrade} onChange={e => setFilterGrade(e.target.value)}
-          style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #E0E0E0' }}>
-          <option value="">Tous grades</option>
-          {GRADE_OPTS.filter(Boolean).map(g => <option key={g} value={g}>{g}</option>)}
-        </select>
+        <ProductTable products={filteredProducts} loading={loading} />
+      </div>
 
-        {/* Momentum */}
-        <div style={{ display: 'flex', gap: 4 }}>
-          {MOMENTUM_OPTS.map(o => (
-            <button key={o.value} onClick={() => setFilterMomentum(o.value)}
-              style={{
-                padding: '4px 10px', fontSize: 12, borderRadius: 6, cursor: 'pointer',
-                border: `1px solid ${filterMomentum === o.value ? '#1BA94C' : '#E0E0E0'}`,
-                background: filterMomentum === o.value ? '#E8F5E9' : '#fff',
-                color: filterMomentum === o.value ? '#0D7A35' : '#555',
-                fontWeight: filterMomentum === o.value ? 700 : 400,
-              }}
-            >{o.label}</button>
+      {/* Two column section */}
+      <div style={styles.twoCol}>
+        <div style={styles.card}>
+          <div style={styles.sectionHeader}>
+            <span style={styles.sectionTitle}>Exploding Right Now 🔥</span>
+            <button style={styles.viewAll} onClick={() => navigate('/search')}>View all →</button>
+          </div>
+          {loading ? (
+            <div style={{ textAlign: 'center', padding: 24 }}><span className="spinner"></span></div>
+          ) : trending.length === 0 ? (
+            <div style={{ color: '#888', fontSize: 13, textAlign: 'center', padding: 24 }}>No trending products yet.</div>
+          ) : trending.map((p, i) => (
+            <div key={p.id || i} style={styles.oppRow}>
+              <div style={styles.oppRank}>{i + 1}</div>
+              <div style={styles.oppTitle} title={p.title}>{p.title}</div>
+              <MomentumBadge label={p.momentum_label} momentum={p.momentum} />
+              <span style={{ fontSize: 11, color: '#1BA94C', fontWeight: 600, whiteSpace: 'nowrap' }}>
+                ${(p.monthly_revenue || p.indicators?.monthly_revenue || 0).toFixed(0)}/mo
+              </span>
+            </div>
           ))}
         </div>
 
-        {/* Prix min/max */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}>Prix</span>
-          <input type="number" placeholder="Min" value={priceMin} onChange={e => setPriceMin(e.target.value)}
-            style={{ width: 52, fontSize: 12, padding: '4px 6px', borderRadius: 6, border: '1px solid #E0E0E0' }} />
-          <span style={{ fontSize: 12, color: '#999' }}>–</span>
-          <input type="number" placeholder="Max" value={priceMax} onChange={e => setPriceMax(e.target.value)}
-            style={{ width: 52, fontSize: 12, padding: '4px 6px', borderRadius: 6, border: '1px solid #E0E0E0' }} />
+        <div style={styles.card}>
+          <div style={styles.sectionHeader}>
+            <span style={styles.sectionTitle}>Categories</span>
+            <button style={styles.viewAll} onClick={() => navigate('/categories')}>View all →</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+            {categories.map((cat, i) => (
+              <div key={cat.category || i} style={{ ...styles.catCard, padding: '10px' }}
+                onClick={() => navigate('/categories')}
+                onMouseEnter={e => { e.currentTarget.style.borderColor = '#1BA94C' }}
+                onMouseLeave={e => { e.currentTarget.style.borderColor = '#E0E0E0' }}
+              >
+                <div style={{ fontSize: 20, marginBottom: 4 }}>{getCatIcon(cat.category)}</div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: '#2D2D2D' }}>{cat.category}</div>
+                <div style={{ fontSize: 10, color: '#888' }}>{cat.product_count || 0} products</div>
+              </div>
+            ))}
+          </div>
         </div>
-
-        {/* Score opportunité min */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <span style={{ fontSize: 12, color: '#666', fontWeight: 600 }}>Opportunité ≥ {minOpportunity}</span>
-          <input type="range" min={0} max={100} value={minOpportunity}
-            onChange={e => setMinOpportunity(Number(e.target.value))}
-            style={{ width: 80, accentColor: '#1BA94C' }} />
-        </div>
-
-        {/* Badge store */}
-        <select value={filterBadge} onChange={e => setFilterBadge(e.target.value)}
-          style={{ fontSize: 12, padding: '5px 8px', borderRadius: 6, border: '1px solid #E0E0E0' }}>
-          {BADGE_OPTS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-
-        <span style={{ marginLeft: 'auto', fontSize: 12, color: '#666' }}>
-          {displayed.length} produits
-        </span>
-
-        {hasFilters && (
-          <button onClick={resetFilters}
-            style={{ fontSize: 11, color: '#E53935', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 600 }}>
-            ✕ Reset
-          </button>
-        )}
       </div>
-
-      {/* Tableau */}
-      <ProductTable products={displayed} loading={loading} showSaveButton />
     </div>
   )
 }

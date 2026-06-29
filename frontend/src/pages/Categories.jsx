@@ -108,11 +108,8 @@ export default function Categories() {
     setError(null)
     setProducts([])
     try {
-      // Extract search keyword from TPT URL
-      const urlParts = node.url.replace('/browse/', '').split('/')
-      const keyword = urlParts[urlParts.length - 1]
       const res = await axios.get('/api/products', {
-        params: { q: keyword, limit: 50 }
+        params: { category_url: node.url, limit: 50 }
       })
       setProducts(res.data || [])
     } catch (e) {
