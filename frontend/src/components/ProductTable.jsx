@@ -28,7 +28,7 @@ function MomentumBadge({ momentum }) {
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <span style={{ fontSize: 16 }}>{emoji}</span>
       <span style={{ fontSize: 10, color: colors[status] || '#999', fontWeight: 600 }}>
-        {score ? (score * 100).toFixed(1) + '%' : ''}
+        {score ? score.toFixed(1) + '%' : ''}
       </span>
     </div>
   )
@@ -41,6 +41,7 @@ const columns = [
   { key: 'price', label: 'Price', width: 70 },
   { key: 'reviews', label: 'Reviews', width: 90 },
   { key: 'favorites', label: 'Favoris', width: 80 },
+  { key: 'total_sales', label: 'Ventes totales', width: 100 },
   { key: 'monthly_revenue', label: 'Rev/mo', width: 90 },
   { key: 'momentum', label: 'Momentum', width: 100 },
   { key: 'quality_score', label: 'Quality', width: 70 },
@@ -77,6 +78,7 @@ const styles = {
 }
 
 function getSortValue(p, key) {
+  if (key === 'total_sales') return p.indicators?.total_sales ?? 0
   if (key === 'monthly_revenue') return p.indicators?.monthly_revenue ?? p.monthly_revenue ?? 0
   if (key === 'momentum') return p.indicators?.momentum_score ?? p.momentum ?? 0
   if (key === 'quality_score') return p.indicators?.quality_score ?? p.optim_score ?? 0
@@ -158,6 +160,7 @@ export default function ProductTable({ products = [], loading = false, compact =
               const monthlyRev = ind.monthly_revenue ?? p.monthly_revenue ?? 0
               const revColor = monthlyRev >= 500 ? '#1BA94C' : monthlyRev >= 100 ? '#FF8F00' : '#E8463A'
               const favorites = p.favorites ?? p.favoris ?? 0
+              const totalSales = ind.total_sales ?? 0
               const qualityScore = ind.quality_score ?? p.optim_score ?? 0
               const finalScore = ind.final_opportunity_score ?? 0
               const momentumData = ind.momentum_score !== undefined ? {
@@ -211,6 +214,9 @@ export default function ProductTable({ products = [], loading = false, compact =
                       )}
                       {col.key === 'favorites' && (
                         <span style={{ color: '#E8463A' }}>❤️ {fmt(favorites)}</span>
+                      )}
+                      {col.key === 'total_sales' && (
+                        <span style={{ fontWeight: 600 }}>{fmt(totalSales)}</span>
                       )}
                       {col.key === 'monthly_revenue' && (
                         <span style={{ color: revColor, fontWeight: 600 }}>{fmtRev(monthlyRev)}</span>
