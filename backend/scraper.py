@@ -1228,7 +1228,6 @@ def scrape_all_categories(delay: float = 1.0, max_pages: int = 1) -> None:
                     break
                 _scrape_status["current"] = f"{cat['name']} / {sort} / page {page}"
                 products = scrape_category_url(cat["url"], cat["name"], cat["id"], sort, page)
-                _scrape_status["products_saved"] += len(products)
                 if not products:
                     _scrape_status["errors"] += 1
                 done += 1
@@ -1236,18 +1235,17 @@ def scrape_all_categories(delay: float = 1.0, max_pages: int = 1) -> None:
                 # Store products in DB synchronously via a new event loop call
                 if products:
                     try:
-                        loop = asyncio.new_event_loop()
-                        async def _save(prods):
-                            from database import upsert_product
-                            for p in prods:
-                                try:
-                                    await upsert_product(p)
-                                except Exception:
-                                    pass
-                        loop.run_until_complete(_save(products))
-                        loop.close()
+                        from database import upsert_product_sync
+                        saved = 0
+                        for p in products:
+                            try:
+                                upsert_product_sync(p)
+                                saved += 1
+                            except Exception as e:
+                                print(f"[scraper] DB save error: {e}")
+                        _scrape_status["products_saved"] += saved
                     except Exception as e:
-                        print(f"[scraper] DB save error: {e}")
+                        print(f"[scraper] DB batch error: {e}")
                 time.sleep(delay)
 
     _scrape_status["running"] = False

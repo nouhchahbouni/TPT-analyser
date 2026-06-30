@@ -19,6 +19,56 @@ async def _pg_conn():
     return await asyncpg.connect(DATABASE_URL)
 
 
+def _pg_conn_sync():
+    """Synchronous psycopg2 connection — for use in background threads."""
+    import psycopg2
+    import psycopg2.extras
+    return psycopg2.connect(DATABASE_URL)
+
+
+def upsert_product_sync(product: Dict[str, Any]) -> None:
+    """Synchronous upsert for use inside background threads (psycopg2)."""
+    fields = ["url", "title", "price", "rating", "reviews_total", "reviews_30j",
+              "favoris", "downloads", "has_bestseller", "has_image", "desc_words",
+              "category", "grade_level", "shop_name", "shop_url", "date_published",
+              "thumbnail", "keyword_searched", "scraped_at",
+              "favorites", "days_since_update", "description_length", "has_common_core",
+              "preview_count", "age_months", "category_url", "shop_slug"]
+    if DATABASE_URL:
+        import psycopg2
+        conn = _pg_conn_sync()
+        try:
+            cols = ", ".join(fields)
+            placeholders = ", ".join("%s" for _ in fields)
+            update_set = ", ".join(f"{f} = EXCLUDED.{f}" for f in fields if f != "url")
+            values = [product.get(f, "") for f in fields]
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"INSERT INTO products ({cols}) VALUES ({placeholders}) "
+                    f"ON CONFLICT (url) DO UPDATE SET {update_set}",
+                    values
+                )
+            conn.commit()
+        finally:
+            conn.close()
+    else:
+        import sqlite3
+        con = sqlite3.connect(DB_PATH)
+        try:
+            cols = ", ".join(fields)
+            placeholders = ", ".join("?" for _ in fields)
+            update_set = ", ".join(f"{f} = excluded.{f}" for f in fields if f != "url")
+            values = [product.get(f, "") for f in fields]
+            con.execute(
+                f"INSERT INTO products ({cols}) VALUES ({placeholders}) "
+                f"ON CONFLICT (url) DO UPDATE SET {update_set}",
+                values
+            )
+            con.commit()
+        finally:
+            con.close()
+
+
 # ─────────────────────────────── init_db ─────────────────────────────────────
 
 async def init_db():
