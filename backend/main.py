@@ -95,18 +95,28 @@ async def get_products(
         for p in enriched:
             p["_source"] = "mock"
 
-    # 4. Enrich with full indicators
+    # 4. Enrich with full indicators — fetch store + yesterday_reviews in parallel
     try:
+        def _slug(p):
+            s = p.get("shop_slug") or ""
+            if not s and p.get("shop_url"):
+                s = p["shop_url"].rstrip("/").split("/")[-1]
+            return s
+
+        slugs = [_slug(p) for p in enriched]
+        urls  = [p.get("url", "") for p in enriched]
+
+        async def _empty_store(): return {}
+
+        stores, yesterdays = await asyncio.gather(
+            asyncio.gather(*[db.get_store(s) if s else _empty_store() for s in slugs]),
+            asyncio.gather(*[db.get_yesterday_reviews(u) for u in urls]),
+        )
+
         enriched_full = []
-        for p in enriched:
+        for p, store, yrev in zip(enriched, stores, yesterdays):
             try:
-                shop_slug = p.get("shop_slug") or ""
-                if not shop_slug and p.get("shop_url"):
-                    shop_slug = p["shop_url"].rstrip("/").split("/")[-1]
-                store = await db.get_store(shop_slug) if shop_slug else {}
-                yesterday_reviews = await db.get_yesterday_reviews(p.get("url", ""))
-                p_enriched = enrich_product_full(p, store, yesterday_reviews, enriched)
-                enriched_full.append(p_enriched)
+                enriched_full.append(enrich_product_full(p, store, yrev, enriched))
             except Exception as e2:
                 print(f"[products] enrich_product_full error: {e2}")
                 enriched_full.append(p)
