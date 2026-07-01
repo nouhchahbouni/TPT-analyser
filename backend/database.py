@@ -64,7 +64,12 @@ def upsert_product_sync(product: Dict[str, Any]) -> None:
         try:
             cols = ", ".join(fields)
             placeholders = ", ".join("%s" for _ in fields)
-            update_set = ", ".join(f"{f} = EXCLUDED.{f}" for f in fields if f != "url")
+            # Keep first category_url — don't overwrite with later categories
+            update_set = ", ".join(
+                f"{f} = COALESCE(products.{f}, EXCLUDED.{f})" if f == "category_url"
+                else f"{f} = EXCLUDED.{f}"
+                for f in fields if f != "url"
+            )
             values = [_coerce(f, product.get(f)) for f in fields]
             with conn.cursor() as cur:
                 cur.execute(
