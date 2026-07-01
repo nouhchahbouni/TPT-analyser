@@ -213,7 +213,7 @@ TPT_LEAF_CATEGORIES = [
 ]
 
 # Vérification du total de requêtes
-SORT_ORDERS = ["Most-Reviewed", "Highest-Rated", "Most-Recent"]
+SORT_ORDERS = ["Most-Reviewed", "Best-Seller"]
 
 def get_total_requests():
     return sum(cat["pages"] * len(SORT_ORDERS) for cat in TPT_LEAF_CATEGORIES)
