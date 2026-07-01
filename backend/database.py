@@ -26,6 +26,30 @@ def _pg_conn_sync():
     return psycopg2.connect(url, sslmode="require")
 
 
+_INT_FIELDS = {"reviews_total", "reviews_30j", "favoris", "downloads", "desc_words",
+               "favorites", "days_since_update", "description_length", "preview_count", "age_months"}
+_FLOAT_FIELDS = {"price", "rating"}
+_BOOL_FIELDS = {"has_bestseller", "has_image", "has_common_core"}
+
+
+def _coerce(field: str, val: Any) -> Any:
+    """Convert empty strings to proper typed values for Postgres."""
+    if val == "" or val is None:
+        if field in _INT_FIELDS: return None
+        if field in _FLOAT_FIELDS: return None
+        if field in _BOOL_FIELDS: return False
+        return None if val is None else val
+    if field in _INT_FIELDS:
+        try: return int(val)
+        except: return None
+    if field in _FLOAT_FIELDS:
+        try: return float(val)
+        except: return None
+    if field in _BOOL_FIELDS:
+        return bool(val)
+    return val
+
+
 def upsert_product_sync(product: Dict[str, Any]) -> None:
     """Synchronous upsert for use inside background threads (psycopg2)."""
     fields = ["url", "title", "price", "rating", "reviews_total", "reviews_30j",
@@ -41,7 +65,7 @@ def upsert_product_sync(product: Dict[str, Any]) -> None:
             cols = ", ".join(fields)
             placeholders = ", ".join("%s" for _ in fields)
             update_set = ", ".join(f"{f} = EXCLUDED.{f}" for f in fields if f != "url")
-            values = [product.get(f, "") for f in fields]
+            values = [_coerce(f, product.get(f)) for f in fields]
             with conn.cursor() as cur:
                 cur.execute(
                     f"INSERT INTO products ({cols}) VALUES ({placeholders}) "
