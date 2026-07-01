@@ -67,8 +67,9 @@ async def get_products(
         print(f"[products] DB error: {e}")
         enriched = []
 
-    # 2. If DB empty, call Algolia live and cache results
-    if not enriched:
+    # 2. If DB empty AND no specific filter → call Algolia live and cache results
+    # Skip Algolia fallback when category_url/category/shop_name is specified (just return empty)
+    if not enriched and not category_url and not category and not shop_name:
         try:
             loop = asyncio.get_event_loop()
             live_products = await loop.run_in_executor(
