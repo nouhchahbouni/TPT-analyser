@@ -22,8 +22,8 @@ async def _pg_conn():
 def _pg_conn_sync():
     """Synchronous psycopg2 connection — for use in background threads."""
     import psycopg2
-    import psycopg2.extras
-    return psycopg2.connect(DATABASE_URL)
+    url = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+    return psycopg2.connect(url, sslmode="require")
 
 
 def upsert_product_sync(product: Dict[str, Any]) -> None:

@@ -1242,10 +1242,13 @@ def scrape_all_categories(delay: float = 1.0, max_pages: int = 1) -> None:
                                 upsert_product_sync(p)
                                 saved += 1
                             except Exception as e:
-                                print(f"[scraper] DB save error: {e}")
+                                print(f"[scraper] DB save error ({type(e).__name__}): {e}")
+                                break  # log once per batch, not 24 times
                         _scrape_status["products_saved"] += saved
+                        if saved == 0 and products:
+                            print(f"[scraper] WARNING: 0/{len(products)} saved in batch")
                     except Exception as e:
-                        print(f"[scraper] DB batch error: {e}")
+                        print(f"[scraper] DB batch error ({type(e).__name__}): {e}")
                 time.sleep(delay)
 
     _scrape_status["running"] = False
