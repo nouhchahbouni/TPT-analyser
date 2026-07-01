@@ -647,11 +647,17 @@ def _extract_apollo_products(html: str) -> List[Dict]:
 
         # Price — inline in pricing object (not a ref)
         price = 0.0
+        original_price = None
         pricing = resource.get("pricing", {})
         if isinstance(pricing, dict):
             ntl = pricing.get("nonTransferableLicenses", {})
             if isinstance(ntl, dict):
                 price = float(ntl.get("price", 0) or 0)
+                raw_orig = ntl.get("originalPrice") or ntl.get("listPrice") or ntl.get("wasPrice")
+                if raw_orig is not None:
+                    op = float(raw_orig)
+                    if op > price:
+                        original_price = op
 
         # Rating — directly on resource
         rating = float(resource.get("overallQualityScore", 0) or 0)
@@ -690,6 +696,7 @@ def _extract_apollo_products(html: str) -> List[Dict]:
             "title": str(title)[:200],
             "url": url,
             "price": price,
+            "original_price": original_price,
             "rating": rating,
             "reviews_total": review_count,
             "thumbnail": thumb,

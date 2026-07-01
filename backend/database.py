@@ -28,7 +28,7 @@ def _pg_conn_sync():
 
 _INT_FIELDS = {"reviews_total", "reviews_30j", "favoris", "downloads", "desc_words",
                "favorites", "days_since_update", "description_length", "preview_count", "age_months"}
-_FLOAT_FIELDS = {"price", "rating"}
+_FLOAT_FIELDS = {"price", "rating", "original_price"}
 _BOOL_FIELDS = {"has_bestseller", "has_image", "has_common_core"}
 
 
@@ -52,7 +52,7 @@ def _coerce(field: str, val: Any) -> Any:
 
 def upsert_product_sync(product: Dict[str, Any]) -> None:
     """Synchronous upsert for use inside background threads (psycopg2)."""
-    fields = ["url", "title", "price", "rating", "reviews_total", "reviews_30j",
+    fields = ["url", "title", "price", "original_price", "rating", "reviews_total", "reviews_30j",
               "favoris", "downloads", "has_bestseller", "has_image", "desc_words",
               "category", "grade_level", "shop_name", "shop_url", "date_published",
               "thumbnail", "keyword_searched", "scraped_at",
@@ -111,6 +111,7 @@ async def init_db():
                     url TEXT UNIQUE NOT NULL,
                     title TEXT NOT NULL,
                     price FLOAT8 DEFAULT 0,
+                    original_price FLOAT8 DEFAULT NULL,
                     rating FLOAT8 DEFAULT 0,
                     reviews_total INTEGER DEFAULT 0,
                     reviews_30j INTEGER DEFAULT 0,
@@ -147,6 +148,7 @@ async def init_db():
                 "ADD COLUMN IF NOT EXISTS age_months INTEGER DEFAULT 12",
                 "ADD COLUMN IF NOT EXISTS category_url TEXT DEFAULT ''",
                 "ADD COLUMN IF NOT EXISTS shop_slug TEXT DEFAULT ''",
+                "ADD COLUMN IF NOT EXISTS original_price FLOAT8 DEFAULT NULL",
             ]:
                 try:
                     await conn.execute(f"ALTER TABLE products {col}")
@@ -288,7 +290,7 @@ async def init_db():
 
 async def upsert_product(product: Dict[str, Any]) -> int:
     """Insert or update a product. Returns the product id."""
-    fields = ["url", "title", "price", "rating", "reviews_total", "reviews_30j",
+    fields = ["url", "title", "price", "original_price", "rating", "reviews_total", "reviews_30j",
               "favoris", "downloads", "has_bestseller", "has_image", "desc_words",
               "category", "grade_level", "shop_name", "shop_url", "date_published",
               "thumbnail", "keyword_searched", "scraped_at",

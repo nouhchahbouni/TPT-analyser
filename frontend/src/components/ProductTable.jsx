@@ -60,7 +60,7 @@ const columns = [
   { key: 'thumbnail', label: '', width: 66, nosort: true },
   { key: 'title', label: 'Title', width: 220 },
   { key: 'store', label: 'Store', width: 140 },
-  { key: 'price', label: 'Price', width: 70 },
+  { key: 'price', label: 'Price', width: 80 },
   { key: 'reviews', label: 'Reviews', width: 90 },
   { key: 'favorites', label: 'Favoris', width: 80 },
   { key: 'total_sales', label: 'Ventes totales', width: 100 },
@@ -233,7 +233,18 @@ export default function ProductTable({ products = [], loading = false, compact =
                           )}
                         </div>
                       )}
-                      {col.key === 'price' && fmtPrice(p.price)}
+                      {col.key === 'price' && (
+                        p.original_price && p.original_price > p.price ? (
+                          <div>
+                            <div style={{ textDecoration: 'line-through', color: '#999', fontSize: 11 }}>
+                              {fmtPrice(p.original_price)}
+                            </div>
+                            <div style={{ color: '#E8463A', fontWeight: 700 }}>
+                              {fmtPrice(p.price)}
+                            </div>
+                          </div>
+                        ) : fmtPrice(p.price)
+                      )}
                       {col.key === 'reviews' && (
                         <div>
                           <div style={{ fontWeight: 600 }}>{fmt(p.reviews_total)}</div>
