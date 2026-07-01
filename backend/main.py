@@ -431,6 +431,18 @@ async def get_trending(limit: int = 10):
 
 # ─────────────────────────────── Stats ────────────────────────────────────────
 
+@app.get("/api/debug/reset-products")
+async def reset_products():
+    """Truncate products table to rescrape from scratch."""
+    try:
+        conn = await db._pg_conn()
+        await conn.execute("TRUNCATE TABLE products RESTART IDENTITY")
+        await conn.close()
+        return {"status": "ok", "message": "Products table cleared. Ready to rescrape."}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/debug/category-check")
 async def debug_category_check(url: str = "/browse/elementary/preschool"):
     """Check how many products exist for a specific category_url."""
