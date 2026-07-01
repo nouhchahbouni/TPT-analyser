@@ -431,6 +431,21 @@ async def get_trending(limit: int = 10):
 
 # ─────────────────────────────── Stats ────────────────────────────────────────
 
+@app.get("/api/debug/category-check")
+async def debug_category_check(url: str = "/browse/elementary/preschool"):
+    """Check how many products exist for a specific category_url."""
+    try:
+        products = await db.get_products(category_url=url, limit=5)
+        conn = await db._pg_conn()
+        count = await conn.fetchval(
+            "SELECT COUNT(*) FROM products WHERE category_url = $1", url
+        )
+        await conn.close()
+        return {"category_url": url, "count": count, "sample": products[:2]}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/debug/category-urls")
 async def debug_category_urls():
     """Show sample category_urls stored in DB."""
