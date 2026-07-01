@@ -89,8 +89,8 @@ async def get_products(
         except Exception as e:
             print(f"[products] Algolia live call failed: {e}")
 
-    # 3. Ultimate fallback: mock data
-    if not enriched:
+    # 3. Mock fallback only when no specific filter is applied
+    if not enriched and not category_url and not category and not shop_name and not q:
         enriched = sc.generate_mock_products(keyword, count=20)
         for p in enriched:
             p["_source"] = "mock"
@@ -430,6 +430,22 @@ async def get_trending(limit: int = 10):
 
 
 # ─────────────────────────────── Stats ────────────────────────────────────────
+
+@app.get("/api/debug/category-urls")
+async def debug_category_urls():
+    """Show sample category_urls stored in DB."""
+    try:
+        conn = await db._pg_conn()
+        rows = await conn.fetch(
+            "SELECT category_url, COUNT(*) as cnt FROM products "
+            "WHERE category_url IS NOT NULL AND category_url != '' "
+            "GROUP BY category_url ORDER BY cnt DESC LIMIT 30"
+        )
+        await conn.close()
+        return [dict(r) for r in rows]
+    except Exception as e:
+        return {"error": str(e)}
+
 
 @app.get("/api/stats")
 async def get_stats():
