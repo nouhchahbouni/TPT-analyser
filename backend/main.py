@@ -284,6 +284,16 @@ async def scrape_keyword_endpoint(q: str, background_tasks: BackgroundTasks, syn
     return {"status": "started", "keyword": q}
 
 
+@app.get("/api/scrape/categories/start")
+async def scrape_categories_start(
+    background_tasks: BackgroundTasks,
+    delay: float = Query(1.0),
+    max_pages: int = Query(1),
+):
+    """Start scraping via GET — accessible directly from browser."""
+    return await scrape_categories_endpoint(background_tasks, delay, max_pages)
+
+
 @app.post("/api/scrape/categories")
 async def scrape_categories_endpoint(
     background_tasks: BackgroundTasks,
