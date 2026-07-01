@@ -5,22 +5,18 @@ def calculate_market_proof(reviews, rating, favorites):
     return (reviews * rating) + (favorites * 2)
 
 
-def calculate_total_sales(reviews, favorites, is_bestseller, age_months):
-    base = (reviews * 12) + (favorites * 3)
-    bestseller_bonus = 1.3 if is_bestseller else 1.0
-    if age_months < 6:
-        age_correction = 1.4
-    elif age_months <= 24:
-        age_correction = 1.0
-    else:
-        age_correction = 0.85
-    return base * bestseller_bonus * age_correction
+def calculate_total_sales(reviews):
+    """reviews × 3 only (no favorites, no age correction)"""
+    return reviews * 3
 
 
 def calculate_monthly_revenue(total_sales, age_months, price):
-    if age_months == 0:
-        age_months = 1
-    monthly_sales = total_sales / age_months
+    """
+    Returns monthly revenue as float, or None if age_months is missing.
+    Caps at $50,000/mo.
+    """
+    if age_months is None or age_months == 0:
+        return None
     if 3 <= price <= 15:
         price_multiplier = 1.2
     elif price < 3:
@@ -29,11 +25,21 @@ def calculate_monthly_revenue(total_sales, age_months, price):
         price_multiplier = 0.8
     else:
         price_multiplier = 1.0
-    return monthly_sales * price * 0.55 * price_multiplier
+    revenue_total = total_sales * price * 0.55 * price_multiplier
+    monthly = revenue_total / age_months
+    return min(monthly, 50000)
 
 
 def calculate_momentum(reviews_today, reviews_yesterday,
                        reviews_total, days_since_update):
+    """Returns no_data if no J-1 snapshot available."""
+    if reviews_yesterday is None or reviews_yesterday == 0:
+        return {
+            "score": None,
+            "status": "no_data",
+            "emoji": "⏳",
+            "message": "Disponible après 24h",
+        }
     if reviews_total == 0:
         return {"score": 0, "status": "declining", "emoji": "📉"}
     reviews_gained = reviews_today - reviews_yesterday
@@ -61,41 +67,83 @@ def calculate_momentum(reviews_today, reviews_yesterday,
 
 def calculate_quality_score(rating, reviews, description_length,
                              has_common_core, preview_count, is_bestseller):
+    """
+    Returns {"score": X, "max_score": Y, "partial": bool}.
+    Fields with None value are excluded from max_score.
+    """
     score = 0
+    max_score = 0
+
+    # Rating (always available) — 25 pts
+    max_score += 25
     if rating > 4.5:
         score += 25
     elif rating > 4.0:
         score += 15
+
+    # Reviews (always available) — 20 pts
+    max_score += 20
     if reviews > 100:
         score += 20
     elif reviews > 50:
         score += 10
-    if description_length > 500:
-        score += 15
-    elif description_length > 200:
-        score += 8
-    if has_common_core:
-        score += 15
-    if preview_count >= 3:
-        score += 15
-    elif preview_count >= 1:
-        score += 8
+
+    # Description length — 15 pts (optional)
+    if description_length is not None:
+        max_score += 15
+        if description_length > 500:
+            score += 15
+        elif description_length > 200:
+            score += 8
+
+    # Common core — 15 pts (optional)
+    if has_common_core is not None:
+        max_score += 15
+        if has_common_core:
+            score += 15
+
+    # Preview count — 15 pts (optional)
+    if preview_count is not None:
+        max_score += 15
+        if preview_count >= 3:
+            score += 15
+        elif preview_count >= 1:
+            score += 8
+
+    # Bestseller — 10 pts (optional, default False)
+    max_score += 10
     if is_bestseller:
         score += 10
-    return min(score, 100)
+
+    return {
+        "score": score,
+        "max_score": max_score,
+        "partial": max_score < 100,
+    }
 
 
 def calculate_opportunity_score(momentum_score, monthly_revenue, quality_score,
                                  age_months, max_momentum, max_revenue):
-    if max_momentum > 0:
+    """Returns None if momentum or revenue data is missing."""
+    if momentum_score is None or monthly_revenue is None:
+        return None
+
+    if max_momentum and max_momentum > 0:
         momentum_norm = (momentum_score / max_momentum) * 100
     else:
         momentum_norm = 0
-    if max_revenue > 0:
+    if max_revenue and max_revenue > 0:
         revenue_norm = (monthly_revenue / max_revenue) * 100
     else:
         revenue_norm = 0
-    if age_months < 6:
+
+    qs = quality_score if isinstance(quality_score, (int, float)) else quality_score.get("score", 0)
+    qs_max = 100 if isinstance(quality_score, (int, float)) else quality_score.get("max_score", 100)
+    qs_pct = (qs / qs_max * 100) if qs_max > 0 else 0
+
+    if age_months is None:
+        freshness = 0
+    elif age_months < 6:
         freshness = 100
     elif age_months < 12:
         freshness = 75
@@ -103,10 +151,11 @@ def calculate_opportunity_score(momentum_score, monthly_revenue, quality_score,
         freshness = 50
     else:
         freshness = 25
+
     score = (
         momentum_norm * 0.35 +
         revenue_norm * 0.30 +
-        quality_score * 0.20 +
+        qs_pct * 0.20 +
         freshness * 0.15
     )
     return round(min(score, 100), 1)
@@ -179,10 +228,17 @@ def calculate_store_score(authority, productivity, consistency,
 
 
 def calculate_final_opportunity(product_opportunity, store_score):
+    if product_opportunity is None:
+        return None
     return round(product_opportunity * 0.70 + store_score * 0.30, 1)
 
 
-def enrich_product_full(product: dict, store: dict, yesterday_reviews: int,
+def _store_is_complete(store: dict) -> bool:
+    """Store data considered complete if it has at least reviews and rating."""
+    return bool(store.get("store_reviews") and store.get("store_rating"))
+
+
+def enrich_product_full(product: dict, store: dict, yesterday_reviews,
                          all_products: list) -> dict:
     """
     Calculates all indicators for a product.
@@ -196,12 +252,23 @@ def enrich_product_full(product: dict, store: dict, yesterday_reviews: int,
     price = float(product.get("price") or 0)
     is_bestseller = bool(product.get("has_bestseller") or False)
     days_since_update = int(product.get("days_since_update") or 90)
-    description_length = int(product.get("description_length") or product.get("desc_words") or 0)
-    has_common_core = bool(product.get("has_common_core") or False)
-    preview_count = int(product.get("preview_count") or 0)
-    age_months = int(product.get("age_months") or 12)
+
+    # Optional fields — keep None if absent
+    raw_desc = product.get("description_length") or product.get("desc_words")
+    description_length = int(raw_desc) if raw_desc is not None else None
+
+    raw_cc = product.get("has_common_core")
+    has_common_core = bool(raw_cc) if raw_cc is not None else None
+
+    raw_prev = product.get("preview_count")
+    preview_count = int(raw_prev) if raw_prev is not None else None
+
+    # age_months: None if no real date_publication
+    raw_age = product.get("age_months")
+    age_months = int(raw_age) if raw_age is not None and raw_age != "" else None
 
     # Extract store fields
+    store_complete = _store_is_complete(store)
     store_reviews = int(store.get("store_reviews") or 0)
     store_rating = float(store.get("store_rating") or 0)
     followers = int(store.get("followers") or 0)
@@ -212,64 +279,75 @@ def enrich_product_full(product: dict, store: dict, yesterday_reviews: int,
 
     # Compute product indicators
     market_proof = calculate_market_proof(reviews_total, rating, favorites)
-    total_sales = calculate_total_sales(reviews_total, favorites, is_bestseller, age_months)
+    total_sales = calculate_total_sales(reviews_total)
     monthly_revenue = calculate_monthly_revenue(total_sales, age_months, price)
     momentum = calculate_momentum(reviews_total, yesterday_reviews, reviews_total, days_since_update)
-    quality_score = calculate_quality_score(rating, reviews_total, description_length,
-                                             has_common_core, preview_count, is_bestseller)
-
-    # Compute store indicators
-    authority = calculate_store_authority(store_reviews, store_rating, followers, nb_bestsellers)
-    productivity = calculate_store_productivity(nb_products, store_age_months, days_since_last_product)
-    # main_category_pct: approximate from store data (50% default if unknown)
-    main_category_pct = 60
-    consistency = calculate_store_consistency(main_category_pct, store_rating)
+    quality = calculate_quality_score(rating, reviews_total, description_length,
+                                      has_common_core, preview_count, is_bestseller)
 
     # Normalize across all products for opportunity score
     all_momentums = []
     all_revenues = []
     for p in all_products:
         rt = int(p.get("reviews_total") or 0)
-        yrev = 0  # we don't have yesterday_reviews for all, use 0
         dsu = int(p.get("days_since_update") or 90)
-        m = calculate_momentum(rt, yrev, rt, dsu)
-        all_momentums.append(m["score"])
-        ts = calculate_total_sales(rt, int(p.get("favorites") or p.get("favoris") or 0),
-                                    bool(p.get("has_bestseller")), int(p.get("age_months") or 12))
-        rev = calculate_monthly_revenue(ts, int(p.get("age_months") or 12) or 1, float(p.get("price") or 0))
-        all_revenues.append(rev)
+        m = calculate_momentum(rt, None, rt, dsu)  # no J-1 for batch, use None
+        if m["score"] is not None:
+            all_momentums.append(m["score"])
+        raw_a = p.get("age_months")
+        p_age = int(raw_a) if raw_a is not None and raw_a != "" else None
+        ts = calculate_total_sales(rt)
+        rev = calculate_monthly_revenue(ts, p_age, float(p.get("price") or 0))
+        if rev is not None:
+            all_revenues.append(rev)
 
     max_momentum = max(all_momentums) if all_momentums else 1
     max_revenue = max(all_revenues) if all_revenues else 1
 
-    # For store score normalization: use single product's store (no batch)
-    max_authority = max(authority, 1)
-    max_productivity = max(productivity, 1)
-    store_result = calculate_store_score(authority, productivity, consistency, store_rating,
-                                          max_authority, max_productivity)
+    # Store indicators
+    if store_complete:
+        authority = calculate_store_authority(store_reviews, store_rating, followers, nb_bestsellers)
+        productivity = calculate_store_productivity(nb_products, store_age_months, days_since_last_product)
+        main_category_pct = 60
+        consistency = calculate_store_consistency(main_category_pct, store_rating)
+        max_authority = max(authority, 1)
+        max_productivity = max(productivity, 1)
+        store_result = calculate_store_score(authority, productivity, consistency, store_rating,
+                                             max_authority, max_productivity)
+        store_indicators = {
+            "authority": round(authority, 1),
+            "productivity": round(productivity, 1),
+            "consistency": consistency,
+            "score": store_result["score"],
+            "badge": store_result["badge"],
+        }
+        store_score_val = store_result["score"]
+    else:
+        store_indicators = {
+            "score": None,
+            "badge": "⏳ Store non analysé",
+        }
+        store_score_val = 0
 
-    opportunity = calculate_opportunity_score(momentum["score"], monthly_revenue, quality_score,
-                                               age_months, max_momentum, max_revenue)
-    final = calculate_final_opportunity(opportunity, store_result["score"])
+    opportunity = calculate_opportunity_score(
+        momentum["score"], monthly_revenue, quality,
+        age_months, max_momentum, max_revenue
+    )
+    final = calculate_final_opportunity(opportunity, store_score_val)
 
     indicators = {
         "market_proof": round(market_proof, 1),
-        "total_sales": round(total_sales, 1),
-        "monthly_revenue": round(monthly_revenue, 2),
+        "total_sales": total_sales,
+        "monthly_revenue": round(monthly_revenue, 2) if monthly_revenue is not None else None,
         "momentum_score": momentum["score"],
         "momentum_status": momentum["status"],
         "momentum_emoji": momentum["emoji"],
-        "quality_score": quality_score,
+        "momentum_message": momentum.get("message"),
+        "quality_score": quality["score"],
+        "quality_max_score": quality["max_score"],
+        "quality_partial": quality["partial"],
         "opportunity_score": opportunity,
         "final_opportunity_score": final,
-    }
-
-    store_indicators = {
-        "authority": round(authority, 1),
-        "productivity": round(productivity, 1),
-        "consistency": consistency,
-        "score": store_result["score"],
-        "badge": store_result["badge"],
     }
 
     product["indicators"] = indicators

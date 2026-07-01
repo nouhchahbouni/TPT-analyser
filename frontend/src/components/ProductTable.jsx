@@ -23,13 +23,35 @@ function ScoreCircle({ score, size = 40 }) {
 function MomentumBadge({ momentum }) {
   if (!momentum) return <span style={{ color: '#999' }}>—</span>
   const { emoji, status, score } = momentum
+  if (status === 'no_data') return (
+    <span style={{ fontSize: 11, color: '#999' }}>⏳ Après 24h</span>
+  )
   const colors = { exploding: '#E8463A', growing: '#1BA94C', stable: '#FF8F00', declining: '#999' }
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
       <span style={{ fontSize: 16 }}>{emoji}</span>
       <span style={{ fontSize: 10, color: colors[status] || '#999', fontWeight: 600 }}>
-        {score ? score.toFixed(1) + '%' : ''}
+        {score != null ? score.toFixed(1) + '%' : ''}
       </span>
+    </div>
+  )
+}
+
+function QualityBadge({ score, maxScore, partial }) {
+  if (score == null) return <span style={{ color: '#999' }}>—</span>
+  const s = typeof score === 'number' ? score : 0
+  const bg = s >= 70 ? '#1BA94C' : s >= 40 ? '#FF8F00' : '#E8463A'
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+      <div style={{
+        width: 40, height: 40, borderRadius: '50%',
+        background: bg, color: '#fff', fontSize: 10,
+        fontWeight: 700, display: 'flex', alignItems: 'center',
+        justifyContent: 'center', flexShrink: 0,
+      }}>
+        {Math.round(s)}
+      </div>
+      {partial && <span style={{ fontSize: 9, color: '#FF8F00' }}>⚠️ partiel</span>}
     </div>
   )
 }
@@ -162,7 +184,9 @@ export default function ProductTable({ products = [], loading = false, compact =
               const favorites = p.favorites ?? p.favoris ?? 0
               const totalSales = ind.total_sales ?? 0
               const qualityScore = ind.quality_score ?? p.optim_score ?? 0
-              const finalScore = ind.final_opportunity_score ?? 0
+              const qualityMax = ind.quality_max_score ?? 100
+              const qualityPartial = ind.quality_partial ?? false
+              const finalScore = ind.final_opportunity_score ?? null
               const momentumData = ind.momentum_score !== undefined ? {
                 emoji: ind.momentum_emoji || '➡️',
                 status: ind.momentum_status || 'stable',
@@ -202,7 +226,11 @@ export default function ProductTable({ products = [], loading = false, compact =
                           <a href={p.shop_url || store.shop_url} target="_blank" rel="noreferrer" style={styles.shopName}>
                             {store.name || p.shop_name || '—'}
                           </a>
-                          {storeInd.badge && <div style={styles.storeBadge}>{storeInd.badge}</div>}
+                          {storeInd.badge && (
+                            <div style={storeInd.badge.startsWith('⏳') ? { fontSize: 10, color: '#999', marginTop: 2 } : styles.storeBadge}>
+                              {storeInd.badge}
+                            </div>
+                          )}
                         </div>
                       )}
                       {col.key === 'price' && fmtPrice(p.price)}
@@ -219,11 +247,19 @@ export default function ProductTable({ products = [], loading = false, compact =
                         <span style={{ fontWeight: 600 }}>{fmt(totalSales)}</span>
                       )}
                       {col.key === 'monthly_revenue' && (
-                        <span style={{ color: revColor, fontWeight: 600 }}>{fmtRev(monthlyRev)}</span>
+                        monthlyRev != null
+                          ? <span style={{ color: revColor, fontWeight: 600 }}>{fmtRev(monthlyRev)}</span>
+                          : <span style={{ fontSize: 10, color: '#999' }}>⏳ Date manquante</span>
                       )}
                       {col.key === 'momentum' && <MomentumBadge momentum={momentumData} />}
-                      {col.key === 'quality_score' && <ScoreCircle score={qualityScore} />}
-                      {col.key === 'final_opportunity_score' && <ScoreCircle score={finalScore} size={44} />}
+                      {col.key === 'quality_score' && (
+                        <QualityBadge score={qualityScore} maxScore={qualityMax} partial={qualityPartial} />
+                      )}
+                      {col.key === 'final_opportunity_score' && (
+                        finalScore != null
+                          ? <ScoreCircle score={finalScore} size={44} />
+                          : <span style={{ fontSize: 10, color: '#999' }}>⏳</span>
+                      )}
                     </td>
                   ))}
                 </tr>
