@@ -422,7 +422,7 @@ async def enrich_top_per_category_start(background_tasks: BackgroundTasks, top_n
                     break
                 try:
                     product_data = await asyncio.get_event_loop().run_in_executor(
-                        None, sc.scrape_product_page, p.get("url", "")
+                        None, sc.fetch_product_graphql, p.get("url", "")
                     )
                     p.update(product_data)
                     await db.upsert_product(p)
@@ -454,6 +454,18 @@ async def enrich_top_per_category_start(background_tasks: BackgroundTasks, top_n
     background_tasks.add_task(_task, top_n)
     return {"status": "started", "top_n": top_n,
             "message": f"Enriching top {top_n} products per category. Check /api/scrape/enrich/top-per-category/status"}
+
+
+@app.get("/api/scrape/enrich/test-graphql")
+async def test_graphql(url: str):
+    """Test fetch_product_graphql on a single product URL."""
+    try:
+        result = await asyncio.get_event_loop().run_in_executor(
+            None, sc.fetch_product_graphql, url
+        )
+        return {"status": "ok", "url": url, "data": result}
+    except Exception as e:
+        return {"status": "error", "url": url, "error": str(e)}
 
 
 @app.get("/api/scrape/enrich/top-per-category/status")

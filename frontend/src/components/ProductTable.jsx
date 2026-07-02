@@ -65,6 +65,7 @@ const columns = [
   { key: 'favorites', label: 'Favoris', width: 80 },
   { key: 'total_sales', label: 'Ventes totales', width: 100 },
   { key: 'monthly_revenue', label: 'Rev/mo', width: 90 },
+  { key: 'downloads', label: 'Downloads', width: 90 },
   { key: 'momentum', label: 'Momentum', width: 100 },
   { key: 'quality_score', label: 'Quality', width: 70 },
   { key: 'final_opportunity_score', label: 'Opportunity', width: 90 },
@@ -105,6 +106,7 @@ function getSortValue(p, key) {
   if (key === 'momentum') return p.indicators?.momentum_score ?? p.momentum ?? 0
   if (key === 'quality_score') return p.indicators?.quality_score ?? p.optim_score ?? 0
   if (key === 'final_opportunity_score') return p.indicators?.final_opportunity_score ?? 0
+  if (key === 'downloads') return p.downloads ?? 0
   if (key === 'favorites') return p.favorites ?? p.favoris ?? 0
   if (key === 'reviews') return p.reviews_total ?? 0
   if (key === 'store') return p.store?.name ?? p.shop_name ?? ''
@@ -261,6 +263,9 @@ export default function ProductTable({ products = [], loading = false, compact =
                         monthlyRev != null
                           ? <span style={{ color: revColor, fontWeight: 600 }}>{fmtRev(monthlyRev)}</span>
                           : <span style={{ fontSize: 10, color: '#999' }}>⏳ Date manquante</span>
+                      )}
+                      {col.key === 'downloads' && (
+                        <span style={{ fontWeight: 600 }}>{fmt(p.downloads ?? null)}</span>
                       )}
                       {col.key === 'momentum' && <MomentumBadge momentum={momentumData} />}
                       {col.key === 'quality_score' && (
