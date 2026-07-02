@@ -801,6 +801,7 @@ def scrape_product_page(product_url: str) -> dict:
     """Fetch a product page and extract extra fields from apolloState."""
     default = {
         "favorites": 0,
+        "original_price": None,
         "date_published": "",
         "days_since_update": 90,
         "description_length": 0,
@@ -872,6 +873,18 @@ def scrape_product_page(product_url: str) -> dict:
                 result["favorites"] = int(
                     resource.get("wishlistsCount") or resource.get("favoritesCount") or resource.get("totalWishlists") or 0
                 )
+                # original_price (promo detection)
+                pricing = resource.get("pricing", {})
+                if isinstance(pricing, dict):
+                    ntl = pricing.get("nonTransferableLicenses", {})
+                    if isinstance(ntl, dict):
+                        current_price = float(ntl.get("price", 0) or 0)
+                        raw_orig = ntl.get("originalPrice") or ntl.get("listPrice") or ntl.get("wasPrice")
+                        if raw_orig is not None:
+                            op = float(raw_orig)
+                            result["original_price"] = op if op > current_price else None
+                        if current_price > 0:
+                            result["price"] = current_price
                 # date_published
                 date_str = (resource.get("datePosted") or resource.get("dateCreated") or resource.get("publishedAt") or "")
                 result["date_published"] = str(date_str)[:10] if date_str else ""
