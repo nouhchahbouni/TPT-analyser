@@ -869,9 +869,14 @@ def scrape_product_page(product_url: str) -> dict:
                             break
 
                 result = dict(default)
+                # Log resource keys for debugging (first time only)
+                if resource:
+                    print(f"[scraper] resource keys: {list(resource.keys())[:30]}")
                 # favorites
                 result["favorites"] = int(
-                    resource.get("wishlistsCount") or resource.get("favoritesCount") or resource.get("totalWishlists") or 0
+                    resource.get("wishlistsCount") or resource.get("favoritesCount") or
+                    resource.get("totalWishlists") or resource.get("savedCount") or
+                    resource.get("totalSaves") or resource.get("listingFavorites") or 0
                 )
                 # original_price (promo detection)
                 pricing = resource.get("pricing", {})
@@ -886,7 +891,10 @@ def scrape_product_page(product_url: str) -> dict:
                         if current_price > 0:
                             result["price"] = current_price
                 # date_published
-                date_str = (resource.get("datePosted") or resource.get("dateCreated") or resource.get("publishedAt") or "")
+                date_str = (resource.get("datePosted") or resource.get("dateCreated") or
+                            resource.get("publishedAt") or resource.get("createdAt") or
+                            resource.get("listingDate") or resource.get("publishDate") or
+                            resource.get("dateAdded") or resource.get("uploadedAt") or "")
                 result["date_published"] = str(date_str)[:10] if date_str else ""
                 # days_since_update
                 last_activity = resource.get("dateLastActivity") or resource.get("dateModified") or resource.get("lastUpdated")
@@ -899,7 +907,11 @@ def scrape_product_page(product_url: str) -> dict:
                     except Exception:
                         pass
                 # description_length
-                desc = resource.get("description") or resource.get("body") or ""
+                desc = (resource.get("description") or resource.get("body") or
+                        resource.get("descriptionHtml") or resource.get("listingDescription") or
+                        resource.get("fullDescription") or resource.get("content") or "")
+                if isinstance(desc, dict):
+                    desc = desc.get("text") or desc.get("html") or desc.get("value") or ""
                 result["description_length"] = len(str(desc).split()) if desc else 0
                 # has_common_core
                 standards = resource.get("standardTags") or resource.get("standards") or resource.get("commonCore") or []
