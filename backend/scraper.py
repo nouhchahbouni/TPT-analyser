@@ -797,6 +797,143 @@ def scrape_store_sync(store_name: str, count: int = 20) -> List[Dict]:
         p["shop_url"] = f"https://www.teacherspayteachers.com/Store/{store_name}"
     return mock
 
+_GRAPHQL_QUERY = """
+query ProductAndSlug($ids: [ID]!, $slug: String, $useResourceCatalog: Boolean = false) {
+  products(ids: $ids, useResourceCatalog: $useResourceCatalog) {
+    id
+    postDate
+    plainTextDescription: description(maxLength: 300, sanitize: PLAIN_TEXT)
+    downloads
+    evaluationRating { count scoreAverage __typename }
+    images { large __typename }
+    commonCoreStandards { id __typename }
+    author { id name url followerCount totalItems __typename }
+    prices {
+      isFree
+      nonTransferableLicense { price discountPrice salePrice __typename }
+      __typename
+    }
+    price
+    discountprice
+    saleprice
+    __typename
+  }
+  resolveSlug(slug: $slug) { id slug __typename }
+}
+"""
+
+def _parse_price_str(s) -> float:
+    if not s: return 0.0
+    try: return float(str(s).replace("$", "").replace(",", "").strip())
+    except: return 0.0
+
+
+def fetch_product_graphql(product_url: str) -> dict:
+    """Fetch product enrichment data via TPT's internal GraphQL API (no ScrapingBee needed)."""
+    default = {
+        "original_price": None,
+        "date_published": "",
+        "description_length": 0,
+        "has_common_core": False,
+        "preview_count": 0,
+        "downloads": 0,
+        "_store_followers": 0,
+        "_store_nb_products": 0,
+    }
+    # Extract product ID and slug from URL
+    m = re.search(r'/Product/(.+?)(?:\?|$)', product_url)
+    if not m:
+        return default
+    slug_with_id = m.group(1).rstrip("/")
+    id_match = re.search(r'-(\d+)$', slug_with_id)
+    if not id_match:
+        return default
+    product_id = id_match.group(1)
+
+    payload = {
+        "operationName": "ProductAndSlug",
+        "query": _GRAPHQL_QUERY,
+        "variables": {
+            "useResourceCatalog": True,
+            "ids": [product_id],
+            "slug": slug_with_id,
+        },
+        "extensions": {},
+    }
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/149.0.0.0 Safari/537.36",
+        "Origin": "https://www.teacherspayteachers.com",
+        "Referer": product_url,
+    }
+    try:
+        resp = requests.post(
+            "https://www.teacherspayteachers.com/graph/graphql?opname=ProductAndSlug",
+            json=payload,
+            headers=headers,
+            timeout=30,
+        )
+        if resp.status_code != 200:
+            print(f"[graphql] HTTP {resp.status_code} for {product_url}")
+            return default
+        data = resp.json()
+        products = data.get("data", {}).get("products", [])
+        if not products:
+            print(f"[graphql] no products in response for {product_url}")
+            return default
+        p = products[0]
+
+        # Prices
+        prices = p.get("prices", {}) or {}
+        ntl = prices.get("nonTransferableLicense", {}) or {}
+        current_price = _parse_price_str(ntl.get("price") or p.get("price"))
+        discount_price = _parse_price_str(ntl.get("discountPrice") or p.get("discountprice"))
+        original_price = None
+        if discount_price > 0 and current_price > discount_price:
+            original_price = current_price
+
+        # date_published
+        post_date = p.get("postDate", "") or ""
+        date_published = str(post_date)[:10] if post_date else ""
+
+        # description_length
+        plain_desc = p.get("plainTextDescription", "") or ""
+        description_length = len(str(plain_desc).split()) if plain_desc else 0
+
+        # has_common_core
+        cc = p.get("commonCoreStandards", []) or []
+        has_common_core = len(cc) > 0
+
+        # preview_count
+        images = p.get("images", []) or []
+        preview_count = len(images)
+
+        # downloads
+        downloads = int(p.get("downloads", 0) or 0)
+
+        # store data
+        author = p.get("author", {}) or {}
+        store_followers = int(author.get("followerCount", 0) or 0)
+        store_nb_products = int(author.get("totalItems", 0) or 0)
+
+        result = {
+            "original_price": original_price,
+            "date_published": date_published,
+            "description_length": description_length,
+            "has_common_core": has_common_core,
+            "preview_count": preview_count,
+            "downloads": downloads,
+            "_store_followers": store_followers,
+            "_store_nb_products": store_nb_products,
+        }
+        print(f"[graphql] ✅ {product_id}: date={date_published}, desc={description_length}, cc={has_common_core}, previews={preview_count}, downloads={downloads}")
+        return result
+    except Exception as e:
+        print(f"[graphql] error for {product_url}: {e}")
+        return default
+
+
 def scrape_product_page(product_url: str) -> dict:
     """Fetch a product page and extract extra fields from apolloState."""
     default = {
