@@ -400,6 +400,67 @@ async def scrape_enrich_endpoint(background_tasks: BackgroundTasks, top_n: int =
     return {"status": "started", "top_n": top_n, "message": "Enrichment launched in background"}
 
 
+_enrich_status = {"running": False, "done": 0, "total": 0, "errors": 0, "started_at": None}
+
+
+@app.get("/api/scrape/enrich/top-per-category/start")
+async def enrich_top_per_category_start(background_tasks: BackgroundTasks, top_n: int = 50):
+    """Scrape individual product pages for top N products per category to get age_months, description, etc."""
+    if _enrich_status.get("running"):
+        return {"status": "already_running", **_enrich_status}
+
+    async def _task(n: int):
+        _enrich_status.update({"running": True, "done": 0, "total": 0, "errors": 0,
+                                "started_at": datetime.now().isoformat()})
+        try:
+            products = await db.get_top_per_category(top_n=n)
+            _enrich_status["total"] = len(products)
+            scraped_stores = set()
+            today = datetime.now().strftime("%Y-%m-%d")
+            for p in products:
+                if not _enrich_status["running"]:
+                    break
+                try:
+                    product_data = await asyncio.get_event_loop().run_in_executor(
+                        None, sc.scrape_product_page, p.get("url", "")
+                    )
+                    p.update(product_data)
+                    await db.upsert_product(p)
+                    _enrich_status["done"] += 1
+                except Exception as e:
+                    _enrich_status["errors"] += 1
+                    print(f"[enrich-top] product error: {e}")
+                # Also scrape store page
+                shop_slug = p.get("shop_slug") or ""
+                if not shop_slug and p.get("shop_url"):
+                    shop_slug = p["shop_url"].rstrip("/").split("/")[-1]
+                if shop_slug and shop_slug not in scraped_stores:
+                    try:
+                        existing = await db.get_store(shop_slug)
+                        if existing.get("scraped_at", "")[:10] != today:
+                            store_data = await asyncio.get_event_loop().run_in_executor(
+                                None, sc.scrape_store_page, shop_slug
+                            )
+                            await db.upsert_store(store_data)
+                        scraped_stores.add(shop_slug)
+                    except Exception as e:
+                        print(f"[enrich-top] store error: {e}")
+        except Exception as e:
+            print(f"[enrich-top] task error: {e}")
+        finally:
+            _enrich_status["running"] = False
+            print(f"[enrich-top] Done: {_enrich_status['done']}/{_enrich_status['total']}, errors={_enrich_status['errors']}")
+
+    background_tasks.add_task(_task, top_n)
+    return {"status": "started", "top_n": top_n,
+            "message": f"Enriching top {top_n} products per category. Check /api/scrape/enrich/top-per-category/status"}
+
+
+@app.get("/api/scrape/enrich/top-per-category/status")
+async def enrich_top_per_category_status():
+    return _enrich_status
+
+
 @app.post("/api/scrape/store")
 async def scrape_store_endpoint(name: str, background_tasks: BackgroundTasks):
     if not name:

@@ -50,8 +50,26 @@ def _coerce(field: str, val: Any) -> Any:
     return val
 
 
+def _compute_age_months(product: Dict[str, Any]) -> Optional[int]:
+    """Compute age_months from date_published if available and age_months not already set."""
+    if product.get("age_months"):
+        return int(product["age_months"])
+    date_str = product.get("date_published", "")
+    if not date_str:
+        return None
+    try:
+        pub = datetime.strptime(str(date_str)[:10], "%Y-%m-%d")
+        delta = datetime.now() - pub
+        months = max(1, int(delta.days / 30))
+        return months
+    except Exception:
+        return None
+
+
 def upsert_product_sync(product: Dict[str, Any]) -> None:
     """Synchronous upsert for use inside background threads (psycopg2)."""
+    product = dict(product)
+    product["age_months"] = _compute_age_months(product)
     fields = ["url", "title", "price", "original_price", "rating", "reviews_total", "reviews_30j",
               "favoris", "downloads", "has_bestseller", "has_image", "desc_words",
               "category", "grade_level", "shop_name", "shop_url", "date_published",
@@ -290,6 +308,8 @@ async def init_db():
 
 async def upsert_product(product: Dict[str, Any]) -> int:
     """Insert or update a product. Returns the product id."""
+    product = dict(product)
+    product["age_months"] = _compute_age_months(product)
     fields = ["url", "title", "price", "original_price", "rating", "reviews_total", "reviews_30j",
               "favoris", "downloads", "has_bestseller", "has_image", "desc_words",
               "category", "grade_level", "shop_name", "shop_url", "date_published",
@@ -675,6 +695,26 @@ async def get_yesterday_reviews(product_url: str) -> int:
             ) as c:
                 row = await c.fetchone()
                 return row[0] if row else 0
+
+
+async def get_top_per_category(top_n: int = 50) -> List[Dict]:
+    """Return top N products per category_url ordered by reviews_total."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            rows = await conn.fetch(f"""
+                SELECT * FROM (
+                    SELECT *, ROW_NUMBER() OVER (
+                        PARTITION BY category_url ORDER BY reviews_total DESC
+                    ) AS rn FROM products
+                    WHERE category_url IS NOT NULL AND category_url != ''
+                      AND (age_months IS NULL OR description_length IS NULL OR description_length = 0)
+                ) t WHERE rn <= $1
+            """, top_n)
+            return [dict(r) for r in rows]
+        finally:
+            await conn.close()
+    return []
 
 
 # ─────────────────────────────── cache helpers ───────────────────────────────
