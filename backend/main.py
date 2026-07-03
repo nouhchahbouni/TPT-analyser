@@ -50,15 +50,43 @@ async def _auto_enrich_loop():
     while True:
         try:
             if not _enrich_status.get("running"):
-                products = await db.get_top_per_category(top_n=50)
-                if products:
-                    print(f"[auto-enrich] {len(products)} products remaining — starting enrichment")
-                    asyncio.create_task(_run_enrich_task(len_hint=len(products)))
+                # Priority 1: enrich products missing date_published
+                missing = await db.get_all_missing_date(limit=5000)
+                if missing:
+                    print(f"[auto-enrich] {len(missing)} products missing date — starting enrichment")
+                    asyncio.create_task(_run_enrich_all_missing())
                 else:
                     print("[auto-enrich] All products enriched ✅")
         except Exception as e:
             print(f"[auto-enrich] check error: {e}")
         await asyncio.sleep(3600)  # check every hour
+
+
+async def _run_enrich_all_missing():
+    """Enrich all products missing date_published."""
+    _enrich_status.update({"running": True, "done": 0, "total": 0, "errors": 0,
+                            "started_at": datetime.now().isoformat()})
+    try:
+        products = await db.get_all_missing_date(limit=5000)
+        _enrich_status["total"] = len(products)
+        for p in products:
+            if not _enrich_status["running"]:
+                break
+            try:
+                product_data = await asyncio.get_event_loop().run_in_executor(
+                    None, sc.fetch_product_graphql, p.get("url", "")
+                )
+                p.update(product_data)
+                await db.upsert_product(p)
+                _enrich_status["done"] += 1
+            except Exception as e:
+                _enrich_status["errors"] += 1
+                print(f"[enrich-date] error: {e}")
+    except Exception as e:
+        print(f"[enrich-date] task error: {e}")
+    finally:
+        _enrich_status["running"] = False
+        print(f"[enrich-date] Done: {_enrich_status['done']}/{_enrich_status['total']}")
 
 
 # ─────────────────────────────── Products ─────────────────────────────────────
