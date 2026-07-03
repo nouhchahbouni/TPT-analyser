@@ -50,13 +50,25 @@ async def _auto_enrich_loop():
     while True:
         try:
             if not _enrich_status.get("running"):
-                # Priority 1: enrich products missing date_published
                 missing = await db.get_all_missing_date(limit=5000)
                 if missing:
                     print(f"[auto-enrich] {len(missing)} products missing date — starting enrichment")
                     asyncio.create_task(_run_enrich_all_missing())
                 else:
                     print("[auto-enrich] All products enriched ✅")
+            if not _store_status.get("running"):
+                slugs = await db.get_all_unique_shop_slugs()
+                # Check how many stores still need scraping
+                pending = []
+                for slug in slugs:
+                    existing = await db.get_store(slug)
+                    if not existing.get("store_rating", 0):
+                        pending.append(slug)
+                if pending:
+                    print(f"[auto-enrich] {len(pending)} stores remaining — starting store enrichment")
+                    asyncio.create_task(_run_enrich_stores())
+                else:
+                    print("[auto-enrich] All stores enriched ✅")
         except Exception as e:
             print(f"[auto-enrich] check error: {e}")
         await asyncio.sleep(3600)  # check every hour
@@ -515,36 +527,39 @@ async def enrich_stores_start(background_tasks: BackgroundTasks):
     if _store_status.get("running"):
         return {"status": "already_running", **_store_status}
 
-    async def _task():
-        _store_status.update({"running": True, "done": 0, "total": 0, "errors": 0,
-                               "started_at": datetime.now().isoformat()})
-        try:
-            slugs = await db.get_all_unique_shop_slugs()
-            _store_status["total"] = len(slugs)
-            print(f"[enrich-stores] {len(slugs)} unique stores to scrape")
-            for slug in slugs:
-                if not _store_status["running"]:
-                    break
-                try:
-                    existing = await db.get_store(slug)
-                    if existing.get("store_rating", 0) > 0:
-                        _store_status["done"] += 1
-                        continue
-                    store_data = await asyncio.get_event_loop().run_in_executor(
-                        None, sc.scrape_store_page, slug
-                    )
-                    await db.upsert_store(store_data)
-                    _store_status["done"] += 1
-                except Exception as e:
-                    _store_status["errors"] += 1
-                    print(f"[enrich-stores] error {slug}: {e}")
-        except Exception as e:
-            print(f"[enrich-stores] task error: {e}")
-        finally:
-            _store_status["running"] = False
-            print(f"[enrich-stores] Done: {_store_status['done']}/{_store_status['total']}, errors={_store_status['errors']}")
+    pass
 
-    background_tasks.add_task(_task)
+
+async def _run_enrich_stores():
+    _store_status.update({"running": True, "done": 0, "total": 0, "errors": 0,
+                           "started_at": datetime.now().isoformat()})
+    try:
+        slugs = await db.get_all_unique_shop_slugs()
+        _store_status["total"] = len(slugs)
+        print(f"[enrich-stores] {len(slugs)} unique stores to scrape")
+        for slug in slugs:
+            if not _store_status["running"]:
+                break
+            try:
+                existing = await db.get_store(slug)
+                if existing.get("store_rating", 0) > 0:
+                    _store_status["done"] += 1
+                    continue
+                store_data = await asyncio.get_event_loop().run_in_executor(
+                    None, sc.scrape_store_page, slug
+                )
+                await db.upsert_store(store_data)
+                _store_status["done"] += 1
+            except Exception as e:
+                _store_status["errors"] += 1
+                print(f"[enrich-stores] error {slug}: {e}")
+    except Exception as e:
+        print(f"[enrich-stores] task error: {e}")
+    finally:
+        _store_status["running"] = False
+        print(f"[enrich-stores] Done: {_store_status['done']}/{_store_status['total']}, errors={_store_status['errors']}")
+
+    background_tasks.add_task(_run_enrich_stores)
     return {"status": "started", "message": "Store enrichment started. Check /api/scrape/enrich/stores/status"}
 
 
