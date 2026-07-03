@@ -492,6 +492,20 @@ async def _run_enrich_task(top_n: int = 50, len_hint: int = None):
         print(f"[enrich-top] Done: {_enrich_status['done']}/{_enrich_status['total']}, errors={_enrich_status['errors']}")
 
 
+@app.get("/api/scrape/enrich/check-dates")
+async def check_dates():
+    """Count products with missing date_published."""
+    try:
+        missing = await db.get_all_missing_date(limit=50000)
+        total = await db.get_products(limit=1)
+        return {
+            "missing_date": len(missing),
+            "message": f"{len(missing)} products still missing date_published"
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @app.get("/api/scrape/enrich/top-per-category/start")
 async def enrich_top_per_category_start(background_tasks: BackgroundTasks, top_n: int = 50):
     """Scrape individual product pages for top N products per category to get age_months, description, etc."""
