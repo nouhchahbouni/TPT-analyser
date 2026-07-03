@@ -14,6 +14,13 @@ def _pg_placeholders(fields: List[str], start: int = 1) -> str:
     return ", ".join(f"${i}" for i in range(start, start + len(fields)))
 
 
+def _normalize(product: dict) -> dict:
+    """Ensure favorites is always populated (favoris is the scraped field name)."""
+    if not product.get("favorites") and product.get("favoris"):
+        product["favorites"] = product["favoris"]
+    return product
+
+
 async def _pg_conn():
     import asyncpg
     return await asyncpg.connect(DATABASE_URL)
@@ -402,7 +409,7 @@ async def get_products(q: str = "", limit: int = 50, offset: int = 0,
                 f"SELECT * FROM products {where} ORDER BY reviews_total DESC LIMIT ${idx} OFFSET ${idx+1}",
                 *params
             )
-            return [dict(r) for r in rows]
+            return [_normalize(dict(r)) for r in rows]
         finally:
             await conn.close()
     else:
@@ -433,7 +440,7 @@ async def get_products(q: str = "", limit: int = 50, offset: int = 0,
                 params
             ) as cursor:
                 rows = await cursor.fetchall()
-                return [dict(r) for r in rows]
+                return [_normalize(dict(r)) for r in rows]
 
 
 # ─────────────────────────────── get_product_by_id ───────────────────────────
@@ -473,7 +480,7 @@ async def get_categories() -> List[Dict]:
         conn = await _pg_conn()
         try:
             rows = await conn.fetch(query)
-            return [dict(r) for r in rows]
+            return [_normalize(dict(r)) for r in rows]
         finally:
             await conn.close()
     else:
@@ -482,7 +489,7 @@ async def get_categories() -> List[Dict]:
             db.row_factory = aiosqlite.Row
             async with db.execute(query) as cursor:
                 rows = await cursor.fetchall()
-                return [dict(r) for r in rows]
+                return [_normalize(dict(r)) for r in rows]
 
 
 # ─────────────────────────────── get_saved_products ──────────────────────────
@@ -500,7 +507,7 @@ async def get_saved_products() -> List[Dict]:
         conn = await _pg_conn()
         try:
             rows = await conn.fetch(query)
-            return [dict(r) for r in rows]
+            return [_normalize(dict(r)) for r in rows]
         finally:
             await conn.close()
     else:
@@ -509,7 +516,7 @@ async def get_saved_products() -> List[Dict]:
             db.row_factory = aiosqlite.Row
             async with db.execute(query) as cursor:
                 rows = await cursor.fetchall()
-                return [dict(r) for r in rows]
+                return [_normalize(dict(r)) for r in rows]
 
 
 # ─────────────────────────────── save_product ────────────────────────────────
@@ -711,7 +718,7 @@ async def get_top_per_category(top_n: int = 50) -> List[Dict]:
                       AND (age_months IS NULL OR description_length IS NULL OR description_length = 0)
                 ) t WHERE rn <= $1
             """, top_n)
-            return [dict(r) for r in rows]
+            return [_normalize(dict(r)) for r in rows]
         finally:
             await conn.close()
     return []
