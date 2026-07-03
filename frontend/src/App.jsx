@@ -6,6 +6,7 @@ import Search from './pages/Search.jsx'
 import Stores from './pages/Stores.jsx'
 import Categories from './pages/Categories.jsx'
 import Saved from './pages/Saved.jsx'
+import Top50 from './pages/Top50.jsx'
 
 export default function App() {
   return (
@@ -17,6 +18,7 @@ export default function App() {
         <Route path="/stores" element={<Stores />} />
         <Route path="/categories" element={<Categories />} />
         <Route path="/saved" element={<Saved />} />
+        <Route path="/top50" element={<Top50 />} />
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </Layout>

@@ -4,6 +4,7 @@ import axios from 'axios'
 
 const navItems = [
   { path: '/dashboard', icon: '🏠', label: 'Dashboard' },
+  { path: '/top50', icon: '🏆', label: 'Top 50' },
   { path: '/search', icon: '🔍', label: 'Search' },
   { path: '/stores', icon: '🏪', label: 'Stores' },
   { path: '/categories', icon: '📚', label: 'Categories' },
