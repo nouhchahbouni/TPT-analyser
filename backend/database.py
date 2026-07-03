@@ -636,6 +636,22 @@ async def upsert_store(store: Dict[str, Any]) -> None:
             await db.commit()
 
 
+async def get_all_unique_shop_slugs() -> List[str]:
+    """Extract unique shop slugs from shop_url for all products."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            rows = await conn.fetch(
+                "SELECT DISTINCT REVERSE(SPLIT_PART(REVERSE(RTRIM(shop_url, '/')), '/', 1)) AS slug "
+                "FROM products WHERE shop_url IS NOT NULL AND shop_url != '' "
+                "ORDER BY slug"
+            )
+            return [r["slug"] for r in rows if r["slug"]]
+        finally:
+            await conn.close()
+    return []
+
+
 async def get_store(slug: str) -> Dict:
     """Fetch a store by slug. Returns empty dict if not found."""
     if DATABASE_URL:

@@ -506,6 +506,53 @@ async def check_dates():
         return {"error": str(e)}
 
 
+_store_status = {"running": False, "done": 0, "total": 0, "errors": 0, "started_at": None}
+
+
+@app.get("/api/scrape/enrich/stores/start")
+async def enrich_stores_start(background_tasks: BackgroundTasks):
+    """Scrape all unique store pages."""
+    if _store_status.get("running"):
+        return {"status": "already_running", **_store_status}
+
+    async def _task():
+        _store_status.update({"running": True, "done": 0, "total": 0, "errors": 0,
+                               "started_at": datetime.now().isoformat()})
+        try:
+            slugs = await db.get_all_unique_shop_slugs()
+            _store_status["total"] = len(slugs)
+            print(f"[enrich-stores] {len(slugs)} unique stores to scrape")
+            for slug in slugs:
+                if not _store_status["running"]:
+                    break
+                try:
+                    existing = await db.get_store(slug)
+                    if existing.get("store_rating", 0) > 0:
+                        _store_status["done"] += 1
+                        continue
+                    store_data = await asyncio.get_event_loop().run_in_executor(
+                        None, sc.scrape_store_page, slug
+                    )
+                    await db.upsert_store(store_data)
+                    _store_status["done"] += 1
+                except Exception as e:
+                    _store_status["errors"] += 1
+                    print(f"[enrich-stores] error {slug}: {e}")
+        except Exception as e:
+            print(f"[enrich-stores] task error: {e}")
+        finally:
+            _store_status["running"] = False
+            print(f"[enrich-stores] Done: {_store_status['done']}/{_store_status['total']}, errors={_store_status['errors']}")
+
+    background_tasks.add_task(_task)
+    return {"status": "started", "message": "Store enrichment started. Check /api/scrape/enrich/stores/status"}
+
+
+@app.get("/api/scrape/enrich/stores/status")
+async def enrich_stores_status():
+    return _store_status
+
+
 @app.get("/api/scrape/enrich/top-per-category/start")
 async def enrich_top_per_category_start(background_tasks: BackgroundTasks, top_n: int = 50):
     """Scrape individual product pages for top N products per category to get age_months, description, etc."""
