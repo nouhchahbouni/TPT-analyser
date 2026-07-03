@@ -474,6 +474,41 @@ async def enrich_top_per_category_start(background_tasks: BackgroundTasks, top_n
             "message": f"Enriching top {top_n} products per category. Check /api/scrape/enrich/top-per-category/status"}
 
 
+@app.get("/api/scrape/enrich/all-missing-date/start")
+async def enrich_all_missing_date(background_tasks: BackgroundTasks):
+    """Enrich all products with missing date_published via GraphQL."""
+    if _enrich_status.get("running"):
+        return {"status": "already_running", **_enrich_status}
+
+    async def _task():
+        _enrich_status.update({"running": True, "done": 0, "total": 0, "errors": 0,
+                                "started_at": datetime.now().isoformat()})
+        try:
+            products = await db.get_all_missing_date(limit=5000)
+            _enrich_status["total"] = len(products)
+            for p in products:
+                if not _enrich_status["running"]:
+                    break
+                try:
+                    product_data = await asyncio.get_event_loop().run_in_executor(
+                        None, sc.fetch_product_graphql, p.get("url", "")
+                    )
+                    p.update(product_data)
+                    await db.upsert_product(p)
+                    _enrich_status["done"] += 1
+                except Exception as e:
+                    _enrich_status["errors"] += 1
+                    print(f"[enrich-date] error: {e}")
+        except Exception as e:
+            print(f"[enrich-date] task error: {e}")
+        finally:
+            _enrich_status["running"] = False
+            print(f"[enrich-date] Done: {_enrich_status['done']}/{_enrich_status['total']}")
+
+    background_tasks.add_task(_task)
+    return {"status": "started", "message": "Enriching all products with missing date. Check /api/scrape/enrich/top-per-category/status"}
+
+
 @app.get("/api/scrape/enrich/test-graphql")
 async def test_graphql(url: str):
     """Test fetch_product_graphql on a single product URL."""

@@ -724,6 +724,22 @@ async def get_top_per_category(top_n: int = 50) -> List[Dict]:
     return []
 
 
+async def get_all_missing_date(limit: int = 5000) -> List[Dict]:
+    """Return all products with missing date_published, ordered by reviews_total desc."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            rows = await conn.fetch(
+                "SELECT * FROM products WHERE date_published IS NULL OR date_published = '' "
+                "ORDER BY reviews_total DESC LIMIT $1",
+                limit
+            )
+            return [_normalize(dict(r)) for r in rows]
+        finally:
+            await conn.close()
+    return []
+
+
 # ─────────────────────────────── cache helpers ───────────────────────────────
 
 async def is_cache_valid(keyword: str) -> bool:
