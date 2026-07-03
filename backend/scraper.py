@@ -890,8 +890,10 @@ def fetch_product_graphql(product_url: str) -> dict:
         current_price = _parse_price_str(ntl.get("price") or p.get("price"))
         discount_price = _parse_price_str(ntl.get("discountPrice") or p.get("discountprice"))
         original_price = None
+        sale_price = None
         if discount_price > 0 and current_price > discount_price:
             original_price = current_price
+            sale_price = discount_price
 
         # date_published
         post_date = p.get("postDate", "") or ""
@@ -919,6 +921,7 @@ def fetch_product_graphql(product_url: str) -> dict:
 
         result = {
             "original_price": original_price,
+            **( {"price": sale_price} if sale_price is not None else {} ),
             "date_published": date_published,
             "description_length": description_length,
             "has_common_core": has_common_core,
