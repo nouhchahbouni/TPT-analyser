@@ -58,14 +58,9 @@ async def _auto_enrich_loop():
                     print("[auto-enrich] All products enriched ✅")
             if not _store_status.get("running"):
                 slugs = await db.get_all_unique_shop_slugs()
-                # Check how many stores still need scraping
-                pending = []
-                for slug in slugs:
-                    existing = await db.get_store(slug)
-                    if not existing.get("store_rating", 0):
-                        pending.append(slug)
-                if pending:
-                    print(f"[auto-enrich] {len(pending)} stores remaining — starting store enrichment")
+                scraped = await db.count_scraped_stores()
+                if scraped < len(slugs):
+                    print(f"[auto-enrich] {len(slugs) - scraped} stores remaining — starting store enrichment")
                     asyncio.create_task(_run_enrich_stores())
                 else:
                     print("[auto-enrich] All stores enriched ✅")

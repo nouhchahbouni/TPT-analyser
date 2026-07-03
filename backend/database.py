@@ -636,6 +636,18 @@ async def upsert_store(store: Dict[str, Any]) -> None:
             await db.commit()
 
 
+async def count_scraped_stores() -> int:
+    """Count stores that have been scraped (store_rating > 0)."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            row = await conn.fetchrow("SELECT COUNT(*) FROM stores WHERE store_rating > 0")
+            return row[0] if row else 0
+        finally:
+            await conn.close()
+    return 0
+
+
 async def get_all_unique_shop_slugs() -> List[str]:
     """Extract unique shop slugs from shop_url for all products."""
     if DATABASE_URL:
