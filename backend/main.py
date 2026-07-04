@@ -225,6 +225,16 @@ async def get_stores(name: str = ""):
     }
 
 
+@app.get("/api/stores/enriched")
+async def get_enriched_stores(limit: int = 100, offset: int = 0):
+    try:
+        stores = await db.get_enriched_stores(limit=limit, offset=offset)
+        total = await db.count_scraped_stores()
+        return {"total_scraped": total, "count": len(stores), "stores": stores}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ─────────────────────────────── Categories ───────────────────────────────────
 
 @app.get("/api/categories")

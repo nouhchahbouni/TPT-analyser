@@ -664,6 +664,21 @@ async def get_all_unique_shop_slugs() -> List[str]:
     return []
 
 
+async def get_enriched_stores(limit: int = 100, offset: int = 0) -> List[Dict]:
+    """Fetch stores from the stores table that have been scraped (store_rating > 0)."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            rows = await conn.fetch(
+                "SELECT * FROM stores WHERE store_rating > 0 ORDER BY followers DESC NULLS LAST LIMIT $1 OFFSET $2",
+                limit, offset
+            )
+            return [dict(r) for r in rows]
+        finally:
+            await conn.close()
+    return []
+
+
 async def get_store(slug: str) -> Dict:
     """Fetch a store by slug. Returns empty dict if not found."""
     if DATABASE_URL:
