@@ -630,6 +630,51 @@ async def test_graphql(url: str):
         return {"status": "error", "url": url, "error": str(e)}
 
 
+_fix_promo_status = {"running": False, "done": 0, "total": 0, "updated": 0, "errors": 0, "started_at": None}
+
+
+async def _run_fix_promo():
+    _fix_promo_status.update({"running": True, "done": 0, "total": 0, "updated": 0, "errors": 0,
+                               "started_at": datetime.now().isoformat()})
+    try:
+        products = await db.get_products_same_price()
+        _fix_promo_status["total"] = len(products)
+        print(f"[fix-promo] {len(products)} products to re-enrich")
+        for p in products:
+            if not _fix_promo_status["running"]:
+                break
+            try:
+                data = await asyncio.get_event_loop().run_in_executor(
+                    None, sc.fetch_product_graphql, p.get("url", "")
+                )
+                p.update(data)
+                await db.upsert_product(p)
+                if data.get("price") and data.get("original_price") and data["original_price"] > data["price"]:
+                    _fix_promo_status["updated"] += 1
+                _fix_promo_status["done"] += 1
+            except Exception as e:
+                _fix_promo_status["errors"] += 1
+                print(f"[fix-promo] error: {e}")
+    except Exception as e:
+        print(f"[fix-promo] task error: {e}")
+    finally:
+        _fix_promo_status["running"] = False
+        print(f"[fix-promo] Done: {_fix_promo_status['done']}/{_fix_promo_status['total']}, promos found: {_fix_promo_status['updated']}")
+
+
+@app.get("/api/scrape/enrich/fix-promo/start")
+async def fix_promo_start(background_tasks: BackgroundTasks):
+    if _fix_promo_status.get("running"):
+        return {"status": "already_running", **_fix_promo_status}
+    background_tasks.add_task(_run_fix_promo)
+    return {"status": "started"}
+
+
+@app.get("/api/scrape/enrich/fix-promo/status")
+async def fix_promo_status():
+    return _fix_promo_status
+
+
 @app.get("/api/scrape/enrich/single")
 async def enrich_single(url: str):
     """Re-enrich a single product via GraphQL and save to DB."""

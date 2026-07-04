@@ -796,6 +796,22 @@ async def get_all_missing_date(limit: int = 5000) -> List[Dict]:
     return []
 
 
+async def get_products_same_price(limit: int = 20000) -> List[Dict]:
+    """Return products where original_price = price (no promo detected yet)."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            rows = await conn.fetch(
+                "SELECT * FROM products WHERE original_price IS NOT NULL AND original_price > 0 "
+                "AND original_price = price ORDER BY reviews_total DESC LIMIT $1",
+                limit
+            )
+            return [_normalize(dict(r)) for r in rows]
+        finally:
+            await conn.close()
+    return []
+
+
 # ─────────────────────────────── cache helpers ───────────────────────────────
 
 async def is_cache_valid(keyword: str) -> bool:
