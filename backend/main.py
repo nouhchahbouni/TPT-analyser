@@ -630,6 +630,23 @@ async def test_graphql(url: str):
         return {"status": "error", "url": url, "error": str(e)}
 
 
+@app.get("/api/scrape/enrich/single")
+async def enrich_single(url: str):
+    """Re-enrich a single product via GraphQL and save to DB."""
+    try:
+        product = await db.get_product_by_url(url)
+        if not product:
+            return {"status": "error", "error": "Product not found in DB"}
+        data = await asyncio.get_event_loop().run_in_executor(
+            None, sc.fetch_product_graphql, url
+        )
+        product.update(data)
+        await db.upsert_product(product)
+        return {"status": "ok", "url": url, "updated": data}
+    except Exception as e:
+        return {"status": "error", "url": url, "error": str(e)}
+
+
 @app.get("/api/scrape/enrich/top-per-category/status")
 async def enrich_top_per_category_status():
     return _enrich_status

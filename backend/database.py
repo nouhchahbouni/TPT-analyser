@@ -443,7 +443,19 @@ async def get_products(q: str = "", limit: int = 50, offset: int = 0,
                 return [_normalize(dict(r)) for r in rows]
 
 
-# ─────────────────────────────── get_product_by_id ───────────────────────────
+# ─────────────────────────────── get_product_by_id / url ─────────────────────
+
+async def get_product_by_url(url: str) -> Optional[Dict]:
+    """Fetch a single product by URL."""
+    if DATABASE_URL:
+        conn = await _pg_conn()
+        try:
+            row = await conn.fetchrow("SELECT * FROM products WHERE url = $1", url)
+            return _normalize(dict(row)) if row else None
+        finally:
+            await conn.close()
+    return None
+
 
 async def get_product_by_id(product_id: int) -> Optional[Dict]:
     """Fetch a single product by id."""
