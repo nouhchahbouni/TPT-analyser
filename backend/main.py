@@ -547,7 +547,7 @@ async def _run_enrich_stores():
                 break
             try:
                 existing = await db.get_store(slug)
-                if existing.get("store_rating", 0) > 0:
+                if existing.get("scraped_at"):
                     _store_status["done"] += 1
                     continue
                 store_data = await asyncio.get_event_loop().run_in_executor(

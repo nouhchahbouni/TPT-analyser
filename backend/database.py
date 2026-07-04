@@ -603,6 +603,7 @@ async def upsert_store(store: Dict[str, Any]) -> None:
     fields = ["slug", "name", "followers", "nb_products", "store_age_months",
               "store_rating", "store_reviews", "nb_bestsellers",
               "days_since_last_product", "scraped_at"]
+    store["scraped_at"] = datetime.now().isoformat()
     if DATABASE_URL:
         conn = await _pg_conn()
         try:
@@ -637,11 +638,11 @@ async def upsert_store(store: Dict[str, Any]) -> None:
 
 
 async def count_scraped_stores() -> int:
-    """Count stores that have been scraped (store_rating > 0)."""
+    """Count stores that have been scraped (scraped_at is set)."""
     if DATABASE_URL:
         conn = await _pg_conn()
         try:
-            row = await conn.fetchrow("SELECT COUNT(*) FROM stores WHERE store_rating > 0")
+            row = await conn.fetchrow("SELECT COUNT(*) FROM stores WHERE scraped_at IS NOT NULL AND scraped_at != ''")
             return row[0] if row else 0
         finally:
             await conn.close()
@@ -665,12 +666,12 @@ async def get_all_unique_shop_slugs() -> List[str]:
 
 
 async def get_enriched_stores(limit: int = 100, offset: int = 0) -> List[Dict]:
-    """Fetch stores from the stores table that have been scraped (store_rating > 0)."""
+    """Fetch stores from the stores table that have been scraped."""
     if DATABASE_URL:
         conn = await _pg_conn()
         try:
             rows = await conn.fetch(
-                "SELECT * FROM stores WHERE store_rating > 0 ORDER BY followers DESC NULLS LAST LIMIT $1 OFFSET $2",
+                "SELECT * FROM stores WHERE scraped_at IS NOT NULL AND scraped_at != '' ORDER BY followers DESC NULLS LAST LIMIT $1 OFFSET $2",
                 limit, offset
             )
             return [dict(r) for r in rows]
