@@ -2,6 +2,12 @@ import React, { useState } from 'react'
 import axios from 'axios'
 
 const fmt = n => typeof n === 'number' ? n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'
+
+function parseCategoryPath(categoryUrl) {
+  if (!categoryUrl) return null
+  const parts = categoryUrl.replace(/^\/browse\//, '').split('/').filter(Boolean)
+  return parts.map(p => p.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())).join(' › ')
+}
 const fmtRev = n => typeof n === 'number' ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
 const fmtPrice = n => typeof n === 'number' ? '$' + n.toFixed(2) : '—'
 
@@ -219,7 +225,11 @@ export default function ProductTable({ products = [], loading = false, compact =
                           <a href={p.url} target="_blank" rel="noreferrer" style={styles.titleLink} title={p.title}>
                             {p.title ? (p.title.length > 60 ? p.title.slice(0, 60) + '…' : p.title) : '—'}
                           </a>
-                          {p.category && <div style={{ fontSize: 10, color: '#999', marginTop: 2 }}>{p.category}</div>}
+                          {parseCategoryPath(p.category_url) && (
+                            <div style={{ fontSize: 10, color: '#888', marginTop: 3, lineHeight: 1.4 }}>
+                              📂 {parseCategoryPath(p.category_url)}
+                            </div>
+                          )}
                           {p.has_bestseller && <div style={styles.bsBadge}>🏆 Best Seller</div>}
                         </div>
                       )}
