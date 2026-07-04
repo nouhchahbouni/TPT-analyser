@@ -3,10 +3,14 @@ import axios from 'axios'
 
 const fmt = n => typeof n === 'number' ? n.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—'
 
-function parseCategoryPath(categoryUrl) {
-  if (!categoryUrl) return null
+function parseCategoryParts(categoryUrl) {
+  if (!categoryUrl) return { main: null, sub: null }
   const parts = categoryUrl.replace(/^\/browse\//, '').split('/').filter(Boolean)
-  return parts.map(p => p.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())).join(' › ')
+  const fmt = s => s.replace(/-/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
+  return {
+    main: parts[0] ? fmt(parts[0]) : null,
+    sub: parts.slice(1).map(fmt).join(' › ') || null,
+  }
 }
 const fmtRev = n => typeof n === 'number' ? '$' + n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'
 const fmtPrice = n => typeof n === 'number' ? '$' + n.toFixed(2) : '—'
@@ -64,7 +68,9 @@ function QualityBadge({ score, maxScore, partial }) {
 
 const columns = [
   { key: 'thumbnail', label: '', width: 66, nosort: true },
-  { key: 'title', label: 'Title', width: 220 },
+  { key: 'title', label: 'Title', width: 200 },
+  { key: 'category', label: 'Catégorie', width: 120 },
+  { key: 'subcategory', label: 'Sous-catégorie', width: 150 },
   { key: 'store', label: 'Store', width: 140 },
   { key: 'price', label: 'Price', width: 80 },
   { key: 'reviews', label: 'Reviews', width: 90 },
@@ -225,14 +231,17 @@ export default function ProductTable({ products = [], loading = false, compact =
                           <a href={p.url} target="_blank" rel="noreferrer" style={styles.titleLink} title={p.title}>
                             {p.title ? (p.title.length > 60 ? p.title.slice(0, 60) + '…' : p.title) : '—'}
                           </a>
-                          {parseCategoryPath(p.category_url) && (
-                            <div style={{ fontSize: 10, color: '#888', marginTop: 3, lineHeight: 1.4 }}>
-                              📂 {parseCategoryPath(p.category_url)}
-                            </div>
-                          )}
                           {p.has_bestseller && <div style={styles.bsBadge}>🏆 Best Seller</div>}
                         </div>
                       )}
+                      {col.key === 'category' && (() => {
+                        const { main } = parseCategoryParts(p.category_url)
+                        return <span style={{ fontSize: 12, color: '#555', fontWeight: 500 }}>{main || p.category || '—'}</span>
+                      })()}
+                      {col.key === 'subcategory' && (() => {
+                        const { sub } = parseCategoryParts(p.category_url)
+                        return <span style={{ fontSize: 11, color: '#888' }}>{sub || '—'}</span>
+                      })()}
                       {col.key === 'store' && (
                         <div>
                           <a href={p.shop_url || store.shop_url} target="_blank" rel="noreferrer" style={styles.shopName}>
