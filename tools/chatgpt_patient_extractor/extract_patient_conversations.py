@@ -149,16 +149,29 @@ _STAFF_DOC_DICTATION = re.compile(
         r[ée]diger|
         [ée]cris(?:[- ]moi)?|
         pr[ée]pare(?:[- ]moi)?|
+        propose(?:[- ]moi)?|
+        donne(?:[- ]moi)?|
+        mets(?:[- ]moi)?|
+        aide(?:[- ]moi)?|
         g[ée]n[èe]re(?:[- ]moi)?|
-        fais(?:[- ]moi)?\s+(?:une?|des)|
+        fai(?:s|tes)(?:[- ]moi)?\s+(?:une?|des)|
         je\s+veux\s+(?:une?|des)\s+(?:lettre|courrier|certificat|rapport|
-            compte[- ]?rendu|consentement|attestation|note|demande)|
+            compte[- ]?rendu|consentement|attestation|note|demande|fiche)|
         mod[èe]le\s+de|
         exemple\s+de\s+(?:lettre|courrier|certificat|rapport)
     )\b.{0,80}\b(
         rapport|compte[- ]?rendu|certificat|consentement|attestation|
-        courrier|lettre|bilan|note\s+de\s+service|feuille|planning|demande
+        courrier|lettre|bilan|note\s+de\s+service|feuille|fiche|planning|
+        demande|e-?mail|courriel|script|collation|cadre\s+juridique|
+        ordonnance
     )\b
+    |
+    ^\s*objet\s*:|
+    [ée]crire\s+un\s+e-?mail|
+    demande\s+d['’]offre\s+de\s+service|
+    message\s+de\s+report|report(?:er)?\s+des?\s+rendez[- ]?vous|
+    donne[- ]moi\s+comment\s+g[ée]rer|
+    message\s+officiel
     """
 )
 
@@ -166,14 +179,19 @@ _STAFF_ON_BEHALF_OF_PATIENT = re.compile(
     r"""(?xi)
     de\s+la\s+part\s+d['’]?(?:un|une)?\s*(patient|patiente|abonn[ée]e?|client|cliente)|
     \bpatient(e)?\s+(a|est|dit|veut|d[ée]sire|souhaite|confirme|a\s+compris)\b|
-    \bpatient\s+\w+\s+age\s+\d+
+    \bpatient\s+\w+\s+age\s+\d+|
+    \bnotre\s+patient(e)?\b|مريضنا|
+    \bpar\s+un\s+patient\b|\bdeja\s+connu\s+que\s+son\b
     """
 )
 
 _CLINICAL_DICTATION = re.compile(
     r"""(?xi)
-    \b(compte[- ]?rendu|bilan\s+ophtalmologique|consentement\s+[ée]clair[ée]|
-       certificat\s+m[ée]dical|rapport\s+m[ée]dical)\b
+    \b(compte[- ]?rendu|bilan\s+ophtalmologique|consentement|
+       certificat\s+m[ée]dical|rapport\s+m[ée]dical|
+       pr[ée]l[èe]vement\s+r[ée]alis[ée]|fen[êe]tre\s+th[ée]rapeutique|
+       analyse\s+microbiologique|
+       تقرير\s+تفصيلي|detailed\s+report|training\s+report)\b
     """
 )
 
@@ -199,31 +217,47 @@ _CONFRERE_REFERRAL = re.compile(
     vous\s+adresse\s+(?:ce|cette)\s+patient|
     [àa]\s+l['’]attention\s+du\s+(?:dr|docteur|pr|professeur)|
     pour\s+le\s+confr[èe]re|
-    lettre\s+(?:pour|au?)\s+(?:dr|docteur|pr|professeur)
+    lettre\s+(?:pour|au?)\s+(?:dr|docteur|pr|professeur)|
+    sentiments\s+confraternels|ton\s+expertise\s+est\s+sollicit[ée]e
     """
 )
 
 _CONTENT_PRODUCTION = re.compile(
     r"""(?xi)
-    traduis|traduction\s+(?:en|de)|
+    traduis|traduction|traduire|
     l[ée]gende\s+(?:instagram|facebook|post|story)?|
+    \bcaption\b|hachtags?|hashtags?|
     logo|
     affiche|panneau|
     corrig\w*[- ]?moi|
     corrig\w*\s+(?:ce|cette|ces)\b|
-    cesmots|
+    cesmots|[àa]\s+corriger\b|
     correction\s+(?:orthographique|de\s+texte)|
     reformul|
     screenshot|
     post\s+(?:instagram|facebook)|
-    style\s+pixar
+    story\s+instagram|
+    style\s+pixar|
+    script\s+(?:pour|vid[ée]o)|
+    descriptif\s+(?:avec|vid[ée]o)|
+    vid[ée]o\s+([ée]ducative|explicative|op[ée]ratoire)|
+    description\s+de\s+video|
+    pour\s+(?:le\s+)?youtube|short\s+youtube|
+    \bqr\s*code\b|\bun\s+qr\b|
+    mot\s+personnalis[ée]|
+    publicit[ée]|
+    Q\s*/\s*R\b|questions?\s+fr[ée]quentes|foire\s+aux\s+questions|\bfaq\b|
+    pr[ée]sente\s+une\s+vid[ée]o\s+explicative|
+    شكرا\s+للتواصل\s+مع\s+مركز|فريق\s+مركز\s+طب\s+العيون
     """
 )
 
 _LEGAL_RESEARCH = re.compile(
     r"""(?xi)
     \bloi\b|jurisprudence|code\s+p[ée]nal|cndp|secret\s+m[ée]dical|
-    \btpi\b|cour\s+d['’]appel|article\s+\d+|d[ée]ontologi
+    \btpi\b|cour\s+d['’]appel|article\s+\d+|d[ée]ontologi|
+    cadre\s+juridique|protection\s+des\s+donn[ée]es\s+personnelles|
+    r[èe]glements?\s+[àa]\s+suivre
     """
 )
 
@@ -231,7 +265,38 @@ _ADMIN_INTERNAL = re.compile(
     r"""(?xi)
     demande\s+de\s+cong[ée]|planning|note\s+de\s+service|
     feuille\s+de\s+(?:garde|poste)|plan\s+de\s+travail|
-    liste\s+(?:des\s+)?explorations|traçabilit[ée]
+    liste\s+(?:des\s+)?explorations|traçabilit[ée]|
+    (modification|mise\s+[àa]\s+jour).{0,20}tarifs?|
+    liste\s+des\s+tarifs|tarifs?\s*[–-]\s*cabinet|
+    r[ôo]les?\s+et\s+responsabilit[ée]s|
+    r[ée]sum[ée]\s+de\s+la\s+journ[ée]e|
+    avis\s+(?:important\s+)?[àa]\s+nos\s+patients|
+    nous\s+tenons\s+[àa]\s+vous\s+informer|
+    mon\s+secr[ée]tariat|notre\s+secr[ée]tariat|
+    \bA\s+(arranger|arrager|ex[ée]cuter|ajuster|am[ée]liorer|transformer)\b|
+    marketing\s+digital|d[ée]veloppement\s+au\s+cabinet|
+    faire\s+une\s+strat[ée]gie|
+    image\s+du\s+brand|construire\s+l['’]image|
+    ligne\s+directive\s+de\s+communication|\bbranding\b
+    """
+)
+
+_JOB_APPLICATION = re.compile(
+    r"""(?xi)
+    candidature|curriculum\s+vitae|\bC\.?V\.?\b.{0,25}(pi[èe]ce\s+jointe|ci-joint)|
+    pi[èe]ce\s+jointe.{0,20}\bC\.?V\.?\b|
+    stage\s+de\s+pr[ée]-?embauche|demande\s+d['’]emploi|
+    entretien\s+d['’]embauche|orthoptiste\s+dipl[ôo]m[ée]e?|
+    solliciter\s+votre\s+haute\s+bienveillance|
+    recherche\s+d['’]un\s+stage|poste\s+d['’]orthoptiste|
+    lettre\s+(?:de\s+)?motivation
+    """
+)
+
+_GENERIC_AUDIENCE_REPLY = re.compile(
+    r"""(?xi)
+    r[ée]pondre\s+gentiment|
+    r[ée]pondre\b.{0,40}\b(aux?\s+)?(personnes|gens|abonn[ée]s|clients|followers)\b
     """
 )
 
@@ -263,6 +328,8 @@ PASS1_RULES: list[tuple[str, re.Pattern]] = [
     ("CONTENT_PRODUCTION", _CONTENT_PRODUCTION),
     ("LEGAL_RESEARCH", _LEGAL_RESEARCH),
     ("ADMIN_INTERNAL", _ADMIN_INTERNAL),
+    ("JOB_APPLICATION", _JOB_APPLICATION),
+    ("GENERIC_AUDIENCE_REPLY", _GENERIC_AUDIENCE_REPLY),
     ("MEDICAL_KNOWLEDGE_QUERY", _MEDICAL_KNOWLEDGE_QUERY),
 ]
 
@@ -278,22 +345,24 @@ _FIRST_PERSON_FR = re.compile(
 _FIRST_PERSON_AR_DARIJA = re.compile(
     r"""(?x)
     أنا|عندي|بغيت|حابس|خصني|خاصني|خص[هنك]?[يمها]*|دياولي|دیالي|ليا|
-    واش|كيفاش|شحال|علاش|شنو|فين|نقدر
+    واش|كيفاش|شحال|علاش|شنو|فين|نقدر|أعاني|لديا|لدي\s
     """
 )
 
 _EYE_CARE_TOPIC = re.compile(
     r"""(?xi)
     lentille|lunette|verre(?:s)?\s+correcteurs?|œil|oeil|yeux|vue|vision|
-    glaucome|cataracte|myopie|astigmat|presbytie|conjonctiv|kератоc|
+    glaucome|cataracte|myopie|astigmat|presbytie|conjonctiv|
     k[ée]ratoc[ôo]ne|
-    عدسة|عدسات|نظارة|نظارات|عملية|عين|عيون|رؤية|بصر|ساد|قرنية
+    عدسة|عدسات|نظارة|نظارات|عملي[ةا]|عين|عيون|رؤية|بصر|ساد|قرنية|
+    جلالة|نظر|شبكية|جحوظ|
+    l3ayn\w*|3ayn(?:i|ina|ihom)?|lbasar|basar\b|nadara\w*|3adas\w*
     """
 )
 
 _ADDRESS_TO_DOCTOR = re.compile(
     r"""(?xi)
-    \b(docteur|dr\.?|cabinet)\b|دكتور|طبيب
+    \b(docteur|dr\.?|cabinet)\b|دكتور|طبيب|بروفيسور
     """
 )
 
@@ -304,9 +373,20 @@ _PATIENT_INTENT = re.compile(
     op[ée]ration|chirurgie|intervention|consultation|
     dispo(?:nibilit[ée])?|adresse\s+du\s+cabinet|contact|num[ée]ro|
     t[ée]l[ée]phone|whatsapp|
-    ثمن|سعر|عملية|موعد|
+    ثمن|سعر|عملي[ةا]|موعد|علاج|جراحة|\b(?:ال)?حل\b|\bتمن\b|مشكل[ةه]?|
     douleur|rouge(?:ur)?|gonfl|flou|
     j['’]ai\s+mal|je\s+vois|je\s+sens|mon\s+œil|mon\s+oeil|ma\s+vue
+    """
+)
+
+_ARABIZI_TOKENS = re.compile(
+    r"""(?xi)
+    \b(
+        ana|bghit|bghina|3?andi|3ndi|3afak|3afek|
+        chhal|hchal|dyal|dyali|wach|wch|
+        3amaliya|3malia|momkin|n3raf|nqder|n9dr|
+        taman|ta9rib\w*|hit|ma3andich|jawabni|3lach|fin|kifach
+    )\b
     """
 )
 
@@ -347,6 +427,12 @@ def classify_pass2(first_user_text: str) -> ClassificationResult:
     if _PATIENT_INTENT.search(first_user_text):
         score += 2
     if _EYE_CARE_TOPIC.search(first_user_text):
+        score += 1
+
+    arabizi_hits = len({m.group(0).lower() for m in _ARABIZI_TOKENS.finditer(first_user_text)})
+    if arabizi_hits >= 2:
+        score += 2
+    elif arabizi_hits == 1:
         score += 1
 
     # Pénalité : messages très longs et très structurés ressemblent plus à
