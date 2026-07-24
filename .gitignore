@@ -6,3 +6,9 @@ __pycache__/
 *.pyc
 .env
 *.db
+
+# tools/chatgpt_patient_extractor: never commit real exports or extracted
+# patient data (PHI) to the repository.
+tools/chatgpt_patient_extractor/data/
+tools/chatgpt_patient_extractor/*.txt
+tools/chatgpt_patient_extractor/*.csv
