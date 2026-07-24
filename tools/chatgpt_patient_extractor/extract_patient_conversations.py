@@ -559,20 +559,22 @@ def process(input_dir: Path) -> tuple[list[KeptConversation], RunStats]:
 
 
 def write_txt(kept: list[KeptConversation], output_path: Path) -> None:
-    role_label = {"user": "PATIENT", "assistant": "CABINET / ASSISTANT"}
+    role_label = {"user": "PATIENT", "assistant": "EQUIPE / ASSISTANT IA"}
     separator = "=" * 80
 
     with output_path.open("w", encoding="utf-8") as f:
         for i, conv in enumerate(kept):
             if i > 0:
                 f.write(separator + "\n")
+            f.write(f"CONVERSATION {i + 1}/{len(kept)}\n")
             f.write(f"Titre     : {conv.title}\n")
             f.write(f"ID        : {conv.conv_id}\n")
             f.write(f"Fichier   : {conv.source_file}\n")
             f.write("-" * 80 + "\n")
-            for role, text in conv.turns:
+            for turn_num, (role, text) in enumerate(conv.turns, start=1):
                 anon_text = anonymize(text)
-                f.write(f"[{role_label.get(role, role.upper())}]\n{anon_text}\n\n")
+                label = role_label.get(role, role.upper())
+                f.write(f"--- Message {turn_num} [{label}] ---\n{anon_text}\n\n")
 
 
 def write_csv(kept: list[KeptConversation], output_path: Path) -> None:
