@@ -476,6 +476,55 @@ _ADDRESS_PATTERN = re.compile(
 )
 
 
+_STAFF_REFINEMENT_INSTRUCTION = re.compile(
+    r"""(?xi)
+    ^\s*(
+        r[ée]pond(?:s|re)?\b|repondre\b|
+        traduis|traduire|traduction|
+        en\s+arabe|en\s+fran[çc]ais|en\s+anglais|
+        plus\s+(court|long|gentil|bref|simple|professionnel|formel)|
+        moins\s+(long|formel)|
+        am[ée]liore|corrige|reformul|raccourci|d[ée]taille|d[ée]veloppe|
+        sois\s+(plus\s+)?(court|gentil|bref)|
+        agit\s+comme|repondre\s+comme|repondre\s+a\s+la\s+mani[èe]re|
+        repondre\s+gentiment|
+        version\s+(plus\s+)?(courte|longue|formelle)|
+        avec\s+(un\s+)?ton|le\s+ton\b
+    )
+    """
+)
+
+
+def extract_clean_exchange(
+    turns: list[tuple[str, str]],
+) -> tuple[str, str | None] | None:
+    """Isole l'échange patient <-> IA "propre" d'une conversation retenue :
+    le message du patient (1er tour) et la réponse finale de l'IA, en
+    ignorant les instructions internes du staff pour peaufiner la réponse
+    ("traduis-la", "réponds plus court", "en arabe"...) et en s'arrêtant
+    dès qu'un message ultérieur ne ressemble plus à une telle instruction
+    (nouveau sujet / message sans rapport plus loin dans le même fil)."""
+    if not turns or turns[0][0] != "user":
+        return None
+
+    patient_text = turns[0][1]
+    assistant_text: str | None = None
+
+    for role, text in turns[1:]:
+        if role == "assistant":
+            assistant_text = text
+            continue
+        # role == "user"
+        is_short_instruction = (
+            len(text.split()) <= 25 and _STAFF_REFINEMENT_INSTRUCTION.search(text)
+        )
+        if is_short_instruction:
+            continue
+        break
+
+    return patient_text, assistant_text
+
+
 def anonymize(text: str) -> str:
     def _replace_name(m: re.Match) -> str:
         return f"{m.group(1)} [NOM]"
@@ -559,7 +608,6 @@ def process(input_dir: Path) -> tuple[list[KeptConversation], RunStats]:
 
 
 def write_txt(kept: list[KeptConversation], output_path: Path) -> None:
-    role_label = {"user": "PATIENT", "assistant": "EQUIPE / ASSISTANT IA"}
     separator = "=" * 80
 
     with output_path.open("w", encoding="utf-8") as f:
@@ -571,10 +619,17 @@ def write_txt(kept: list[KeptConversation], output_path: Path) -> None:
             f.write(f"ID        : {conv.conv_id}\n")
             f.write(f"Fichier   : {conv.source_file}\n")
             f.write("-" * 80 + "\n")
-            for turn_num, (role, text) in enumerate(conv.turns, start=1):
-                anon_text = anonymize(text)
-                label = role_label.get(role, role.upper())
-                f.write(f"--- Message {turn_num} [{label}] ---\n{anon_text}\n\n")
+
+            exchange = extract_clean_exchange(conv.turns)
+            if exchange is None:
+                continue
+            patient_text, assistant_text = exchange
+
+            f.write(f"[DEMANDE DU PATIENT]\n{anonymize(patient_text)}\n\n")
+            if assistant_text:
+                f.write(f"[REPONSE DE L'IA]\n{anonymize(assistant_text)}\n\n")
+            else:
+                f.write("[REPONSE DE L'IA]\n(aucune réponse dans cette conversation)\n\n")
 
 
 def write_csv(kept: list[KeptConversation], output_path: Path) -> None:
