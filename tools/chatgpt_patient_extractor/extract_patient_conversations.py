@@ -142,36 +142,39 @@ class ClassificationResult:
 
 # --- Passe 1 : exclusions "sûres" (travail interne du staff) --------------
 
+_DOC_KEYWORDS = (
+    r"rapport|compte[- ]?rendu|certificat|consentement|attestation|"
+    r"courrier|lettre|bilan|note\s+de\s+service|feuille|fiche|planning|"
+    r"demande|e-?mail|courriel|script|collation|cadre\s+juridique|"
+    r"ordonnance|document|registre"
+)
+
 _STAFF_DOC_DICTATION = re.compile(
-    r"""(?xi)
+    rf"""(?xi)
     \b(
         r[ée]dige(?:[- ]moi)?|
         r[ée]diger|
         [ée]cris(?:[- ]moi)?|
-        pr[ée]pare(?:[- ]moi)?|
+        pr[ée]pare[rz]?(?:[- ]moi)?|
         propose(?:[- ]moi)?|
         donne(?:[- ]moi)?|
         mets(?:[- ]moi)?|
         aide(?:[- ]moi)?|
         g[ée]n[èe]re(?:[- ]moi)?|
-        fai(?:s|tes)(?:[- ]moi)?\s+(?:une?|des)|
-        je\s+veux\s+(?:une?|des)\s+(?:lettre|courrier|certificat|rapport|
-            compte[- ]?rendu|consentement|attestation|note|demande|fiche)|
-        mod[èe]le\s+de|
-        exemple\s+de\s+(?:lettre|courrier|certificat|rapport)
-    )\b.{0,80}\b(
-        rapport|compte[- ]?rendu|certificat|consentement|attestation|
-        courrier|lettre|bilan|note\s+de\s+service|feuille|fiche|planning|
-        demande|e-?mail|courriel|script|collation|cadre\s+juridique|
-        ordonnance
-    )\b
+        fai(?:s|tes|re)(?:[- ]moi)?\s+(?:une?|des)
+    )\b.{{0,80}}\b({_DOC_KEYWORDS})\b
     |
+    (je\s+veux|j['’]ai\s+besoin\s+d['’]|il\s+me\s+faut)\s+(?:une?|des)\s+
+        ({_DOC_KEYWORDS})|
+    mod[èe]le\s+de\s+({_DOC_KEYWORDS})|
+    exemple\s+de\s+({_DOC_KEYWORDS})|
     ^\s*objet\s*:|
     [ée]crire\s+un\s+e-?mail|
     demande\s+d['’]offre\s+de\s+service|
     message\s+de\s+report|report(?:er)?\s+des?\s+rendez[- ]?vous|
     donne[- ]moi\s+comment\s+g[ée]rer|
-    message\s+officiel
+    message\s+officiel|
+    cr[ée]ation\s+d['’]un\s+registre|registre\s+du?\s+bloc\s+op[ée]ratoire
     """
 )
 
@@ -218,7 +221,13 @@ _CONFRERE_REFERRAL = re.compile(
     [àa]\s+l['’]attention\s+du\s+(?:dr|docteur|pr|professeur)|
     pour\s+le\s+confr[èe]re|
     lettre\s+(?:pour|au?)\s+(?:dr|docteur|pr|professeur)|
-    sentiments\s+confraternels|ton\s+expertise\s+est\s+sollicit[ée]e
+    sentiments\s+confraternels|salutations\s+confraternelles|
+    ton\s+expertise\s+est\s+sollicit[ée]e|
+    confier\s+une\s+malade|je\s+t['’]envoie\s+son\s+nom|
+    je\s+suis\s+(?:le\s+|la\s+)?(?:dr|docteur|pr|professeur)\.?\s+\w+.{0,40}
+        (rhumatologue|m[ée]decin|g[ée]n[ée]raliste|chirurgien|
+         p[ée]diatre|cardiologue|dermatologue|orthop[ée]diste|
+         neurologue|endocrinologue|gyn[ée]cologue)
     """
 )
 
@@ -241,14 +250,20 @@ _CONTENT_PRODUCTION = re.compile(
     script\s+(?:pour|vid[ée]o)|
     descriptif\s+(?:avec|vid[ée]o)|
     vid[ée]o\s+([ée]ducative|explicative|op[ée]ratoire)|
-    description\s+de\s+video|
-    pour\s+(?:le\s+)?youtube|short\s+youtube|
+    description\s+(?:de|pour)\s+(?:la\s+)?vid[ée]o|
+    pour\s+(?:le\s+)?youtube|short\s+youtube|vid[ée]o\s+youtube|
     \bqr\s*code\b|\bun\s+qr\b|
     mot\s+personnalis[ée]|
     publicit[ée]|
     Q\s*/\s*R\b|questions?\s+fr[ée]quentes|foire\s+aux\s+questions|\bfaq\b|
     pr[ée]sente\s+une\s+vid[ée]o\s+explicative|
-    شكرا\s+للتواصل\s+مع\s+مركز|فريق\s+مركز\s+طب\s+العيون
+    شكرا\s+للتواصل\s+مع\s+مركز|فريق\s+مركز\s+طب\s+العيون|
+    en\s+couleur\s+\w+.{0,20}s[ée]parer|
+    (\#\w+[\s\S]{0,50}){2,}|
+    partage\s+l['’]histoire\s+de\s+son\s+patient|
+    derri[èe]re\s+chaque\s+(?:intervention|op[ée]ration)|
+    وراء\s+كل\s+عملية\s+قصة|
+    \bmention\s+l[ée]gale?\b
     """
 )
 
@@ -266,18 +281,26 @@ _ADMIN_INTERNAL = re.compile(
     demande\s+de\s+cong[ée]|planning|note\s+de\s+service|
     feuille\s+de\s+(?:garde|poste)|plan\s+de\s+travail|
     liste\s+(?:des\s+)?explorations|traçabilit[ée]|
+    liste\s+du\s+mat[ée]riel|mat[ée]riel\s+(?:ophtalmologique|disponible)|
+    registre\s+du?\s+bloc\s+op[ée]ratoire|cr[ée]ation\s+d['’]un\s+registre|
     (modification|mise\s+[àa]\s+jour).{0,20}tarifs?|
     liste\s+des\s+tarifs|tarifs?\s*[–-]\s*cabinet|
     r[ôo]les?\s+et\s+responsabilit[ée]s|
     r[ée]sum[ée]\s+de\s+la\s+journ[ée]e|
     avis\s+(?:important\s+)?[àa]\s+nos\s+patients|
-    nous\s+tenons\s+[àa]\s+vous\s+informer|
+    nous\s+tenons\s+[àa]\s+vous\s+informer|nous\s+(?:vous\s+)?informons\s+que|
+    cher\s*\(?e?\)?\s*patient|
     mon\s+secr[ée]tariat|notre\s+secr[ée]tariat|
     \bA\s+(arranger|arrager|ex[ée]cuter|ajuster|am[ée]liorer|transformer)\b|
     marketing\s+digital|d[ée]veloppement\s+au\s+cabinet|
     faire\s+une\s+strat[ée]gie|
     image\s+du\s+brand|construire\s+l['’]image|
-    ligne\s+directive\s+de\s+communication|\bbranding\b
+    ligne\s+directive\s+de\s+communication|\bbranding\b|
+    salle\s+(?:de\s+)?chirurgie|retard\s+(?:au|du)\s+d[ée]marrage|
+    ressource\s+(?:humaine\s+)?d[ée]di[ée]e|
+    r[ée]clamations\s+concernant|nombreuses\s+r[ée]clamations|
+    am[ée]liorer\s+la\s+gestion\s+des\s+r[ée]ponses|
+    bracelets?\s+(?:bleu|blanc|rouge)|codification\s+des\s+bracelets
     """
 )
 
@@ -327,9 +350,10 @@ _RDV_TOPIC = re.compile(
     prendre\s+(un\s+)?rendez|confirmer\s+(mon|le|votre)?\s*rendez|
     annuler|annulation|report(er)?\s+(mon|le|votre)?\s*rendez|
     modifier\s+(mon|le)?\s*rendez|vos?\s+disponibilit[ée]s?|cr[ée]neaux?|
-    obtenir\s+une\s+consultation|
+    obtenir\s+une\s+consultation|venir\s+pour\s+une\s+consultation|
     m['’]indiquer\s+(vos?\s+)?disponibilit|
     d[ée]marche\s+(à\s+suivre\s+)?pour\s+(obtenir|avoir)\s+une\s+consultation|
+    conditions\s+de\s+paiement|
     موعد|حجز\s+موعد
     """
 )
@@ -338,9 +362,10 @@ _PRICE_TOPIC = re.compile(
     r"""(?xi)
     \bprix\b|\btarif\b|\bcombien\b|co[ûu]t\b|\bdevis\b|estimation|
     \bquotation\b|\bquote\b|\bcost\b|\bpricing\b|\bfee\b|installment|
-    ثمن|تمن|كم.{0,10}(تمن|ثمن)|
-    شحال\w*.{0,40}(فلوس|درهم|تمن|ثمن|تقام|كيكلف|يكلف|كتحتاج)|
-    (فلوس|درهم|تمن|ثمن).{0,40}شحال|
+    مصاريف|مصروف|تكلفة|كلفة|
+    ثمن|تمن|كم.{0,10}(تمن|ثمن)|كم\s*تتكلف|كم\s*يكلف|
+    شحال\w*.{0,40}(فلوس|درهم|تمن|ثمن|تقام|كيكلف|يكلف|كتحتاج|تكلفة)|
+    (فلوس|درهم|تمن|ثمن|تكلفة).{0,40}شحال|
     \b(taman|chhal|hchal)\b
     """
 )
@@ -360,7 +385,8 @@ _CONTACT_REQUEST_TOPIC = re.compile(
     r"""(?xi)
     n[uú]m[ée]ro\s+de\s+(t[ée]l[ée]phone|tlf|tel)\b|
     arrive\s+pas\s+[àa]\s+(vous\s+)?joindre|
-    n['’]arrive\s+pas\s+[àa]\s+(vous\s+)?(joindre|contacter)
+    n['’]arrive\s+pas\s+[àa]\s+(vous\s+)?(joindre|contacter)|
+    ^\s*adresse\s+du\s+cabinet\s*$
     """
 )
 
@@ -608,6 +634,7 @@ _APPOINTMENT_PROPOSAL_LINE = re.compile(
     contactez[- ]nous|nous\s+contacter\s+(pour|au)|
     contacter\s+(directement\s+)?(le\s+cabinet|notre\s+secr[ée]tariat)|
     لحجز\s+موعد|حجز\s+موعد|مرحبا\s+بك\s+لحجز|تحديد\s+موعد|حدد\s+موعد|
+    حجز.{0,20}موعد|موعد.{0,20}حجز|
     ندعوكم\s+للتواصل|تواصلوا?\s+معنا|
     يمكنكم?\s+(?:ال)?(?:اتصال|تواصل)\b.{0,30}(?:لحجز|موعد)
     """
@@ -644,7 +671,9 @@ _META_ONLY_RESPONSE = re.compile(
 )
 
 
-_QUOTED_SUGGESTED_REPLY = re.compile(r'["“]([^"“”]{25,}?)["”]', re.DOTALL)
+_QUOTED_SUGGESTED_REPLY = re.compile(
+    r'[:：]\s*\n*\s*["“]([^"“”]{25,}?)["”]', re.DOTALL
+)
 
 
 _PRIVATE_USE_CHARS = re.compile(r"[-]")
