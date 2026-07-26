@@ -176,7 +176,9 @@ _STAFF_DOC_DICTATION = re.compile(
     message\s+officiel|
     cr[ée]ation\s+d['’]un\s+registre|registre\s+du?\s+bloc\s+op[ée]ratoire|
     ^\s*lettre\s+m[ée]dicale|
-    ^\s*lettre\s+d['’]?\s?information
+    ^\s*lettre\s+d['’]?\s?information|
+    ^\s*(?:alors,?\s*)?fiche\s+de\s+poste|
+    d[ée]terminer\s+une\s+charte|charte\s+de\s+maquillage
     """
 )
 
@@ -353,7 +355,8 @@ _ADMIN_INTERNAL = re.compile(
     exclusivement\s+par\s+(?:mail|e-?mail)|
     par\s+mail\b.{0,50}exclusivement|
     probl[èe]me\s+de\s+vid[ée]o.{0,60}(?:instagram|whatsapp)|
-    \bاجتماع\b.{0,30}(?:دكتور|أطباء|علمي|طبي)
+    \bاجتماع\b.{0,30}(?:دكتور|أطباء|علمي|طبي)|
+    \bmasterclass\b
     """
 )
 
@@ -755,6 +758,8 @@ _META_ONLY_RESPONSE = re.compile(
     ^\s*(bien\s+s[ûu]r|parfait|tr[èe]s\s+bien|d['’]accord|entendu|tamam|
          تمام|طبعا)\b[^.\n]{0,100}
     \b(je\s+vais|j['’]int[èe]gre|سأقوم|راه?\s+غادي)\b
+    |
+    ^\s*غادي\s+ن\w+
     """
 )
 
@@ -958,7 +963,12 @@ def extract_clean_exchange(
             continue
         break
 
-    final_text = last_substantive_assistant_text or last_assistant_text
+    # Si toutes les réponses assistant disponibles ne sont que du méta-texte
+    # ("je vais te formuler une réponse rassurante...", sans jamais la vraie
+    # réponse -- signe que le fil est tronqué dans l'export), il n'y a pas
+    # de vraie réponse à montrer : on abandonne plutôt que d'afficher ce
+    # méta-texte comme s'il répondait au patient.
+    final_text = last_substantive_assistant_text
     if final_text is None:
         return None
     assistant_text = clean_ai_response(final_text)
