@@ -146,7 +146,7 @@ _DOC_KEYWORDS = (
     r"rapport|compte[- ]?rendu|certificat|consentement|attestation|"
     r"courrier|lettre|bilan|note\s+(?:de\s+)?service|feuille|fiche|planning|"
     r"demande|e-?mail|courriel|script|collation|cadre\s+juridique|"
-    r"ordonnance|document|registre|procuration"
+    r"ordonnance|document|registre|procuration|message"
 )
 
 _STAFF_DOC_DICTATION = re.compile(
@@ -157,7 +157,7 @@ _STAFF_DOC_DICTATION = re.compile(
         [ée]cri(?:s|t|re|vez)?(?:[- ]moi)?|
         pr[ée]pare[rz]?(?:[- ]moi)?|
         propose(?:[- ]moi)?|
-        donne(?:[- ]moi)?|
+        donn?ne?r?(?:[- ]moi)?|
         mets(?:[- ]moi)?|
         aide(?:[- ]moi)?|
         g[ée]n[èe]re(?:[- ]moi)?|
@@ -227,9 +227,11 @@ _CONFRERE_REFERRAL = re.compile(
     (?:lettre|courrier)\s+(?:pour|au?|[àa])\s+(?:dr|docteur|pr|professeur)|
     sentiments\s+confraternels|salutations\s+confraternelles|
     ton\s+expertise\s+est\s+sollicit[ée]e|
-    confier\s+une\s+malade|je\s+t['’]envoie\s+son\s+nom|
+    confier\s+(?:une\s+)?(?:malade|patiente?)|je\s+t['’]envoie\s+son\s+nom|
+    vous\s+(?:la|le)\s+confier|
     congr[èe]s\s+(?:de\s+l['’]?)?atoc|\bATOC\b|
     assist[ée]?\s+[àa]\s+la\s+session|
+    assister\s+[àa]\s+(?:quelques\s+)?cas\s+de\s+chirurgie|
     je\s+suis\s+(?:le\s+|la\s+)?(?:dr|docteur|pr|professeur)\.?\s+\w+.{0,40}
         (rhumatologue|m[ée]decin|g[ée]n[ée]raliste|chirurgien|
          p[ée]diatre|cardiologue|dermatologue|orthop[ée]diste|
@@ -342,10 +344,16 @@ _ADMIN_INTERNAL = re.compile(
     note\s+d['’]honoraires|
     agent\s+conversationnel|structure\s+de\s+l['’]agent|
     besoins\s+des\s+ophtalmologistes|groupe\s+(?:de\s+)?ophtalmologistes|
-    bonjour\s+[àa]\s+tous\b|
+    (?:bonjour|bonsoir)\s+[àa]\s+tous\b|
     assistants?\s+de\s+la\s+clinique|
     refus(?:e|ent)\s+de\s+prendre\s+(?:en\s+charge\s+)?les?\s+bo[îi]tes|
-    \bvalide?\s+avec\s+(?:le\s+)?dr\b
+    \bvalide?\s+avec\s+(?:le\s+)?dr\b|
+    groupe\s+(?:de\s+gestion|whatsapp)|message\s+du\s+groupe|
+    ordre\s+de\s+mission|
+    exclusivement\s+par\s+(?:mail|e-?mail)|
+    par\s+mail\b.{0,50}exclusivement|
+    probl[èe]me\s+de\s+vid[ée]o.{0,60}(?:instagram|whatsapp)|
+    \bاجتماع\b.{0,30}(?:دكتور|أطباء|علمي|طبي)
     """
 )
 
@@ -679,7 +687,7 @@ _APPOINTMENT_PROPOSAL_LINE = re.compile(
     souhaitez[- ]vous\b[\s\S]{0,60}\b(rendez[- ]?vous|rdv)\b|
     je\s+reste\s+[àa]\s+votre\s+disposition|
     tenir\s+moi\s+.{0,15}courant|
-    n['’]h[ée]sitez\s+pas\s+[àa]\s+nous\s+contacter|
+    n['’]h[ée]sitez\s+pas\s+[àa]\s+(?:nous\s+)?contacter|
     nous\s+(vous\s+)?invitons\s+[àa]\s+(nous\s+)?contacter|
     je\s+vous\s+recommande\s+de\s+(prendre\s+rendez|venir\s+en\s+consultation)|
     venir\s+en\s+consultation|
