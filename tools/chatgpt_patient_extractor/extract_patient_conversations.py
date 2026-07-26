@@ -176,7 +176,8 @@ _STAFF_DOC_DICTATION = re.compile(
     donne[- ]moi\s+comment\s+g[ée]rer|
     message\s+officiel|
     cr[ée]ation\s+d['’]un\s+registre|registre\s+du?\s+bloc\s+op[ée]ratoire|
-    ^\s*lettre\s+m[ée]dicale
+    ^\s*lettre\s+m[ée]dicale|
+    ^\s*lettre\s+d['’]?\s?information
     """
 )
 
@@ -217,7 +218,7 @@ _THIRD_PERSON_PATIENT = re.compile(
 
 _CONFRERE_REFERRAL = re.compile(
     r"""(?xi)
-    cher\s+confr[èe]re|
+    cher[e]?\s+confr[èe]re?s?\b|
     adresser\s+(?:un|une|ce|cette)\s+patient|
     vous\s+adresse\s+(?:ce|cette)\s+patient|
     [àa]\s+l['’]attention\s+du\s+(?:dr|docteur|pr|professeur)|
@@ -226,6 +227,8 @@ _CONFRERE_REFERRAL = re.compile(
     sentiments\s+confraternels|salutations\s+confraternelles|
     ton\s+expertise\s+est\s+sollicit[ée]e|
     confier\s+une\s+malade|je\s+t['’]envoie\s+son\s+nom|
+    congr[èe]s\s+(?:de\s+l['’]?)?atoc|\bATOC\b|
+    assist[ée]?\s+[àa]\s+la\s+session|
     je\s+suis\s+(?:le\s+|la\s+)?(?:dr|docteur|pr|professeur)\.?\s+\w+.{0,40}
         (rhumatologue|m[ée]decin|g[ée]n[ée]raliste|chirurgien|
          p[ée]diatre|cardiologue|dermatologue|orthop[ée]diste|
@@ -326,7 +329,11 @@ _ADMIN_INTERNAL = re.compile(
     cher\s+parent\b|service\s+facturation|eduka\.school|frais\s+scolaires|
     impp?[ée]ratifs?\s+pour\s+le\s+bon\s+d[ée]roulement|
     bloc\s+op[ée]ratoire|mat[ée]riel\s+chirurgical\s+(?:disponible|requis)|
-    informer\s+la\s+clinique|contr[ôo]les?\s+et\s+ablations?\s+de\s+lentilles
+    informer\s+la\s+clinique|contr[ôo]les?\s+et\s+ablations?\s+de\s+lentilles|
+    espace\s+patients\s+sur\s+le\s+site|
+    mot\s+de\s+passe\s*(?:a|à)\s*(?:donner|communiquer)|
+    nous\s+(?:vous\s+)?prions\s+de\s+bien\s+vouloir|
+    restons?\s+dans\s+l['’]attente\s+de\s+votre\s+retour
     """
 )
 
@@ -667,7 +674,7 @@ _APPOINTMENT_PROPOSAL_LINE = re.compile(
     contactez[- ]nous|nous\s+contacter\s+(pour|au)|
     contacter\s+(directement\s+)?(le\s+cabinet|notre\s+secr[ée]tariat)|
     لحجز\s+موعد|حجز\s+موعد|مرحبا\s+بك\s+لحجز|تحديد\s+موعد|حدد\s+موعد|
-    حجز.{0,20}موعد|موعد.{0,20}حجز|أخذ.{0,15}(?:ال)?موعد|
+    حجز.{0,20}موعد|موعد.{0,20}حجز|أخذ.{0,15}(?:ال)?موعد|تاخدي?\s+موعد|
     نعطي[كه]?م?.{0,15}موعد|نعطيك\s+موعد|
     ندعوكم\s+للتواصل|تواصلوا?\s+معنا|
     لا\s+تتردد(?:وا)?\s+في\s+الاتصال|سنكون\s+سعداء\s+بخدمتك|
@@ -740,6 +747,19 @@ _CITATION_ARTIFACT = re.compile(r"\s*(?:cite)?(?:turn\d+search\d+)+", re.I)
 # quel dans le texte de la reponse -- inutile et incomprehensible pour le
 # patient, a retirer comme les citations web.
 _TOOL_CALL_ARTIFACT = re.compile(r"image_group\{[^}]*\}\n?")
+# Marqueurs d'un autre outil ChatGPT ("canvas" d'écriture) qui encadrent le
+# texte utile sans faire partie du message -- on retire juste les marqueurs,
+# pas le contenu entre les deux.
+_WRITING_TOOL_OPEN = re.compile(r"^:::writing\{[^}]*\}\s*\n?", re.M)
+_WRITING_TOOL_CLOSE = re.compile(r"\n?^:::\s*$", re.M)
+
+# Bloc de hashtags marketing/SEO ajouté en fin de réponse (parfois précédé
+# d'une étiquette "Hashtags :" / "هاشتاغات SEO:") -- pur artefact de contenu
+# pour réseaux sociaux, pas une réponse médicale.
+_HASHTAG_LINE = re.compile(r"^\s*(?:#\S+\s*)+$")
+_HASHTAG_LABEL_LINE = re.compile(
+    r"^\s*(?:hashtags?|هاشتاغ(?:ات)?)\s*(?:seo)?\s*:?\s*$", re.I
+)
 
 
 def clean_ai_response(text: str) -> str:
@@ -753,6 +773,8 @@ def clean_ai_response(text: str) -> str:
     text = _PRIVATE_USE_CHARS.sub("", text)
     text = _CITATION_ARTIFACT.sub("", text)
     text = _TOOL_CALL_ARTIFACT.sub("", text)
+    text = _WRITING_TOOL_OPEN.sub("", text)
+    text = _WRITING_TOOL_CLOSE.sub("", text)
     dividers = list(_RESPONSE_DIVIDER.finditer(text))
     if len(dividers) >= 2:
         inner = text[dividers[0].end() : dividers[-1].start()].strip()
@@ -788,6 +810,14 @@ def clean_ai_response(text: str) -> str:
         and _RESPONSE_TRAILING_META.search(paragraphs[-1])
     ):
         paragraphs.pop()
+    while paragraphs:
+        lines = [ln for ln in paragraphs[-1].split("\n") if ln.strip()]
+        if lines and all(
+            _HASHTAG_LINE.match(ln) or _HASHTAG_LABEL_LINE.match(ln) for ln in lines
+        ):
+            paragraphs.pop()
+        else:
+            break
 
     cleaned = "\n\n".join(paragraphs).strip()
     return cleaned or text.strip()
