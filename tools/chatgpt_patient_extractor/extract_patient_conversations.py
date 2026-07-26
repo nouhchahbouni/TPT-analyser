@@ -154,15 +154,14 @@ _STAFF_DOC_DICTATION = re.compile(
     \b(
         r[ée]dige(?:[- ]moi)?|
         r[ée]diger|
-        [ée]cris(?:[- ]moi)?|
-        [ée]crire(?:[- ]moi)?|
+        [ée]cri(?:s|t|re|vez)?(?:[- ]moi)?|
         pr[ée]pare[rz]?(?:[- ]moi)?|
         propose(?:[- ]moi)?|
         donne(?:[- ]moi)?|
         mets(?:[- ]moi)?|
         aide(?:[- ]moi)?|
         g[ée]n[èe]re(?:[- ]moi)?|
-        fai(?:s|tes|re)(?:[- ]moi)?\s+(?:une?|des)
+        fai(?:s|t|tes|re)(?:[- ](?:[àa]\s+)?moi)?\s+(?:une?|des)
     )\b.{{0,80}}\b({_DOC_KEYWORDS})\b
     |
     (je\s+veux|j['’]ai\s+besoin\s+d['’]|il\s+me\s+faut)\s+(?:une?|des)\s+
@@ -225,7 +224,7 @@ _CONFRERE_REFERRAL = re.compile(
     vous\s+adresse\s+(?:ce|cette)\s+patient|
     [àa]\s+l['’]attention\s+du\s+(?:dr|docteur|pr|professeur)|
     pour\s+le\s+confr[èe]re|
-    lettre\s+(?:pour|au?)\s+(?:dr|docteur|pr|professeur)|
+    (?:lettre|courrier)\s+(?:pour|au?|[àa])\s+(?:dr|docteur|pr|professeur)|
     sentiments\s+confraternels|salutations\s+confraternelles|
     ton\s+expertise\s+est\s+sollicit[ée]e|
     confier\s+une\s+malade|je\s+t['’]envoie\s+son\s+nom|
@@ -272,6 +271,7 @@ _CONTENT_PRODUCTION = re.compile(
     وراء\s+كل\s+عملية\s+قصة|
     \bmention\s+l[ée]gale?\b|
     ^\s*en\s+(arabe|fran[çc]ais|anglais)\s*$|
+    nqol\s+b\s*(?:l\s*)?fransi|kifa[hx]\s+n(?:qol|goul)|
     (j['’]aimes?|abonn[ée]s?|followers?|likes?|vues?)\b.{0,40}
         \b(augmenter|booster|acheter|gagner|obtenir)\b|
     \b(augmenter|booster|acheter|gagner|obtenir)\b.{0,40}
@@ -341,7 +341,11 @@ _ADMIN_INTERNAL = re.compile(
     strat[ée]gie\s+de\s+communication|
     note\s+d['’]honoraires|
     agent\s+conversationnel|structure\s+de\s+l['’]agent|
-    besoins\s+des\s+ophtalmologistes|groupe\s+(?:de\s+)?ophtalmologistes
+    besoins\s+des\s+ophtalmologistes|groupe\s+(?:de\s+)?ophtalmologistes|
+    bonjour\s+[àa]\s+tous\b|
+    assistants?\s+de\s+la\s+clinique|
+    refus(?:e|ent)\s+de\s+prendre\s+(?:en\s+charge\s+)?les?\s+bo[îi]tes|
+    \bvalide?\s+avec\s+(?:le\s+)?dr\b
     """
 )
 
@@ -683,7 +687,7 @@ _APPOINTMENT_PROPOSAL_LINE = re.compile(
     contacter\s+(directement\s+)?(le\s+cabinet|notre\s+secr[ée]tariat)|
     لحجز\s+موعد|حجز\s+موعد|مرحبا\s+بك\s+لحجز|تحديد\s+موعد|حدد\s+موعد|
     حجز.{0,20}موعد|موعد.{0,20}حجز|أخذ.{0,15}(?:ال)?موعد|تاخدي?\s+موعد|
-    تديري?\s+موعد|
+    تديري?\s+موعد|ديرو?ي?\s+موعد|نحددو?\s+موعد|ترتيب\s+موعد|
     نعطي[كه]?م?.{0,15}موعد|نعطيك\s+موعد|
     ندعوكم\s+للتواصل|تواصلوا?\s+معنا|
     لا\s+تتردد(?:وا)?\s+في\s+الاتصال|سنكون\s+سعداء\s+بخدمتك|
@@ -698,15 +702,26 @@ def strip_appointment_proposal(text: str) -> str:
     que la réponse à la question médicale du patient.
 
     Une proposition peut être : (a) une phrase isolée noyée dans un
-    paragraphe qui contient par ailleurs une vraie réponse médicale -- dans
-    ce cas on ne retire QUE cette ligne, pour ne pas perdre le reste de la
-    réponse ; ou (b) tout un petit paragraphe de clôture (puces, questions
-    courtes du style "souhaitez-vous un RDV ? ou une explication ?") qui
-    n'est que ça -- dans ce cas on le retire en bloc, sinon des fragments
-    de puces orphelins resteraient. On distingue les deux cas par la
-    longueur du paragraphe : un paragraphe court est presque toujours un
-    bloc de clôture dédié, un paragraphe long mêle proposition et contenu
-    médical réel."""
+    paragraphe qui contient par ailleurs une vraie réponse médicale ; ou
+    (b) tout un petit paragraphe de clôture (puces, questions courtes du
+    style "souhaitez-vous un RDV ? ou une explication ?") qui n'est que ça,
+    parfois étalé sur plusieurs lignes courtes où le mot déclencheur
+    ("souhaitez-vous") et le mot-clé ("rendez-vous") ne sont pas sur la
+    même ligne.
+
+    On ne se fie PAS à la longueur du paragraphe pour distinguer ces deux
+    cas (un paragraphe mixte court existe aussi, ex: une phrase de prix
+    légitime suivie d'une phrase de RDV, le tout sous 220 caractères) --
+    une ancienne version basée sur un seuil de longueur pouvait supprimer
+    tout le paragraphe (y compris la phrase légitime) puis, ne trouvant
+    plus rien à garder, retomber sur le texte original non nettoyé.
+    À la place : un paragraphe qui ne contient AUCUN signal de proposition
+    est laissé intact (formatage préservé) ; un paragraphe qui en contient
+    un est aplati puis découpé par phrase (ponctuation de fin), pour
+    retirer précisément la ou les phrases fautives même quand elles
+    s'étalent sur plusieurs lignes courtes, quitte à perdre les sauts de
+    ligne internes de CE paragraphe précis (toujours bien moins grave que
+    perdre tout le paragraphe ou revenir au texte non nettoyé)."""
     paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
 
     without_contact_blocks = [p for p in paragraphs if not _CONTACT_BLOCK.search(p)]
@@ -716,22 +731,13 @@ def strip_appointment_proposal(text: str) -> str:
     cleaned_paragraphs = []
     for para in paragraphs:
         flat = " ".join(para.split("\n"))
-        if len(para) <= 220 and _APPOINTMENT_PROPOSAL_LINE.search(flat):
+        if not _APPOINTMENT_PROPOSAL_LINE.search(flat):
+            cleaned_paragraphs.append(para)
             continue
-        # Une phrase-proposition peut être noyée au milieu d'une même ligne
-        # de prose continue (pas de saut de ligne propre) : on affine donc
-        # au niveau de la phrase (ponctuation de fin), pas seulement de la
-        # ligne, pour ne retirer que la phrase fautive.
-        cleaned_lines = []
-        for line in para.split("\n"):
-            clauses = re.split(r"(?<=[.!?؟])\s+", line)
-            kept_clauses = [
-                c for c in clauses if not _APPOINTMENT_PROPOSAL_LINE.search(c)
-            ]
-            if kept_clauses:
-                cleaned_lines.append(" ".join(kept_clauses).strip())
-        if cleaned_lines:
-            cleaned_paragraphs.append("\n".join(cleaned_lines).strip())
+        clauses = re.split(r"(?<=[.!?؟])\s+", flat)
+        kept_clauses = [c for c in clauses if not _APPOINTMENT_PROPOSAL_LINE.search(c)]
+        if kept_clauses:
+            cleaned_paragraphs.append(" ".join(kept_clauses).strip())
 
     cleaned = "\n\n".join(p for p in cleaned_paragraphs if p.strip())
     return cleaned or text.strip()
