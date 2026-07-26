@@ -213,6 +213,8 @@ _THIRD_PERSON_PATIENT = re.compile(
     |
     \bpatient(e)?\b.{0,40}\b(âg[ée]e?\s+de|se\s+pr[ée]sente|pr[ée]sente\s+une|
         consulte\s+pour)\b
+    |
+    le\s+patiente?\s+(?:voulait|voulais|voudrait|souhaitait|souhaite)\b
     """
 )
 
@@ -275,7 +277,9 @@ _CONTENT_PRODUCTION = re.compile(
     \b(augmenter|booster|acheter|gagner|obtenir)\b.{0,40}
         \b(abonn[ée]s?|followers?|likes?|vues?)\b|
     (?:\b(?:j['’]aimes?|likes?|vues?|abonn[ée]s?|followers?)\b[\s\S]{0,60}){2,}
-        [\s\S]{0,100}\b(service|tariffs?)\b
+        [\s\S]{0,100}\b(service|tariffs?)\b|
+    متخصص[ةه]?\s+في\s+تشخيص\s+وعلاج|
+    sp[ée]cialis[ée]e?\s+dans\s+le\s+diagnostic\s+et\s+le\s+traitement
     """
 )
 
@@ -333,7 +337,11 @@ _ADMIN_INTERNAL = re.compile(
     espace\s+patients\s+sur\s+le\s+site|
     mot\s+de\s+passe\s*(?:a|à)\s*(?:donner|communiquer)|
     nous\s+(?:vous\s+)?prions\s+de\s+bien\s+vouloir|
-    restons?\s+dans\s+l['’]attente\s+de\s+votre\s+retour
+    restons?\s+dans\s+l['’]attente\s+de\s+votre\s+retour|
+    strat[ée]gie\s+de\s+communication|
+    note\s+d['’]honoraires|
+    agent\s+conversationnel|structure\s+de\s+l['’]agent|
+    besoins\s+des\s+ophtalmologistes|groupe\s+(?:de\s+)?ophtalmologistes
     """
 )
 
@@ -675,6 +683,7 @@ _APPOINTMENT_PROPOSAL_LINE = re.compile(
     contacter\s+(directement\s+)?(le\s+cabinet|notre\s+secr[ée]tariat)|
     لحجز\s+موعد|حجز\s+موعد|مرحبا\s+بك\s+لحجز|تحديد\s+موعد|حدد\s+موعد|
     حجز.{0,20}موعد|موعد.{0,20}حجز|أخذ.{0,15}(?:ال)?موعد|تاخدي?\s+موعد|
+    تديري?\s+موعد|
     نعطي[كه]?م?.{0,15}موعد|نعطيك\s+موعد|
     ندعوكم\s+للتواصل|تواصلوا?\s+معنا|
     لا\s+تتردد(?:وا)?\s+في\s+الاتصال|سنكون\s+سعداء\s+بخدمتك|
@@ -762,6 +771,28 @@ _HASHTAG_LABEL_LINE = re.compile(
 )
 
 
+def _strip_trailing_hashtags(text: str) -> str:
+    """Retire un bloc de hashtags marketing/SEO en fin de texte, y compris
+    quand il ne forme que la dernière ligne d'un paragraphe qui contient par
+    ailleurs une signature légitime (ex: "**Cabinet Dr X**\\n#DrX
+    #Ophtalmologie")."""
+    paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    while paragraphs:
+        lines = paragraphs[-1].split("\n")
+        while lines and (
+            not lines[-1].strip()
+            or _HASHTAG_LINE.match(lines[-1])
+            or _HASHTAG_LABEL_LINE.match(lines[-1])
+        ):
+            lines.pop()
+        if not lines:
+            paragraphs.pop()
+            continue
+        paragraphs[-1] = "\n".join(lines)
+        break
+    return "\n\n".join(paragraphs).strip()
+
+
 def clean_ai_response(text: str) -> str:
     """Nettoie la réponse de l'IA : ne garde que le message destiné au
     patient, en retirant le préambule ("Voici une proposition...") et les
@@ -779,7 +810,7 @@ def clean_ai_response(text: str) -> str:
     if len(dividers) >= 2:
         inner = text[dividers[0].end() : dividers[-1].start()].strip()
         if inner:
-            return inner
+            return _strip_trailing_hashtags(inner) or inner
 
     # Cas "voici le message à envoyer : « ... »" : un seul bloc entre
     # guillemets, substantiel, est presque toujours LE message suggéré
@@ -810,17 +841,9 @@ def clean_ai_response(text: str) -> str:
         and _RESPONSE_TRAILING_META.search(paragraphs[-1])
     ):
         paragraphs.pop()
-    while paragraphs:
-        lines = [ln for ln in paragraphs[-1].split("\n") if ln.strip()]
-        if lines and all(
-            _HASHTAG_LINE.match(ln) or _HASHTAG_LABEL_LINE.match(ln) for ln in lines
-        ):
-            paragraphs.pop()
-        else:
-            break
 
     cleaned = "\n\n".join(paragraphs).strip()
-    return cleaned or text.strip()
+    return _strip_trailing_hashtags(cleaned) or cleaned or text.strip()
 
 
 _VALEDICTION = re.compile(
