@@ -482,7 +482,9 @@ _STAFF_REFINEMENT_INSTRUCTION = re.compile(
         r[ée]pond(?:s|re)?\b|repondre\b|
         traduis|traduire|traduction|
         en\s+arabe|en\s+fran[çc]ais|en\s+anglais|
+        (arabe|fran[çc]ais|anglais)\s*[.!]?\s*$|
         plus\s+(court|long|gentil|bref|simple|professionnel|formel)|
+        (courte?|longue?|br[èe]ve?)\s*[.!]?\s*$|
         moins\s+(long|formel)|
         am[ée]liore|corrige|reformul|raccourci|d[ée]taille|d[ée]veloppe|
         sois\s+(plus\s+)?(court|gentil|bref)|
@@ -491,35 +493,25 @@ _STAFF_REFINEMENT_INSTRUCTION = re.compile(
         version\s+(plus\s+)?(courte|longue|formelle)|
         avec\s+(un\s+)?ton|le\s+ton\b|
         rester\s+vague|contacter\s+secr[ée]tariat|ne\s+pas\s+donner|
-        ajouter|rajouter
-    )
-    """
-)
-
-_LOOKS_LIKE_NEW_MESSAGE = re.compile(
-    r"""(?xi)
-    ^\s*(
-        as-?salamu?\s*alaykum|salam\b|wa\s*alaykum|assalamu?\s*alaikum|
-        السلام|سلام|
-        bonjour|bonsoir|salut|hello|hi|cher\s+docteur|dear\s+dr
+        ajouter\s+(les?\s+)?num[ée]ros?|rajouter\s+(les?\s+|la\s+)
     )
     """
 )
 
 
 def _is_staff_instruction_turn(text: str) -> bool:
-    """Un tour utilisateur ultérieur est traité comme une instruction interne
-    du staff à l'IA (à ignorer, pas un nouveau message patient) s'il
-    correspond à un mot-clé connu ("traduis", "en arabe", "plus court"...),
-    ou s'il est court et ne ressemble pas à un nouveau message de patient
-    (pas de salutation/adresse en début de message)."""
+    """Un tour utilisateur ultérieur n'est suivi (ignoré comme faisant
+    partie du même échange) que s'il correspond explicitement à une
+    instruction de mise en forme de LA MÊME réponse ("traduis-la", "réponds
+    plus court", "en arabe"...). Toute autre demande, même courte
+    ("numéro whatsapp ?", "cabinet dr rifay", "adresse du cabinet"), est
+    considérée comme une nouvelle question et met fin à l'échange : mieux
+    vaut garder la première réponse pertinente que dériver vers un sujet
+    sans rapport plus loin dans un fil réutilisé par le staff."""
     stripped = text.strip()
-    word_count = len(stripped.split())
-    if _STAFF_REFINEMENT_INSTRUCTION.search(stripped):
-        return True
-    if word_count <= 20 and not _LOOKS_LIKE_NEW_MESSAGE.match(stripped):
-        return True
-    return False
+    return bool(
+        len(stripped.split()) <= 25 and _STAFF_REFINEMENT_INSTRUCTION.search(stripped)
+    )
 
 
 _RESPONSE_DIVIDER = re.compile(r"^[ \t]*[-—⸻*_]{3,}[ \t]*$", re.MULTILINE)
@@ -551,15 +543,35 @@ _META_ONLY_RESPONSE = re.compile(
 )
 
 
+_QUOTED_SUGGESTED_REPLY = re.compile(r'["“]([^"“”]{25,}?)["”]', re.DOTALL)
+
+
+_PRIVATE_USE_CHARS = re.compile(r"[-]")
+_CITATION_ARTIFACT = re.compile(r"\s*(?:cite)?(?:turn\d+search\d+)+", re.I)
+
+
 def clean_ai_response(text: str) -> str:
     """Nettoie la réponse de l'IA : ne garde que le message destiné au
     patient, en retirant le préambule ("Voici une proposition...") et les
     questions de suivi adressées au staff ("Voulez-vous que je...?")."""
+    # ChatGPT insère parfois des marqueurs de citation invisibles (caractères
+    # de la zone d'usage privé Unicode autour de "citeturnXsearchY") pour son
+    # rendu de recherche web ; sans mise en forme ils restent comme un
+    # charabia inutile pour le patient.
+    text = _PRIVATE_USE_CHARS.sub("", text)
+    text = _CITATION_ARTIFACT.sub("", text)
     dividers = list(_RESPONSE_DIVIDER.finditer(text))
     if len(dividers) >= 2:
         inner = text[dividers[0].end() : dividers[-1].start()].strip()
         if inner:
             return inner
+
+    # Cas "voici le message à envoyer : « ... »" : un seul bloc entre
+    # guillemets, substantiel, est presque toujours LE message suggéré
+    # (le reste est un commentaire du staff, pas destiné au patient).
+    quotes = list(_QUOTED_SUGGESTED_REPLY.finditer(text))
+    if len(quotes) == 1 and len(quotes[0].group(1).split()) >= 10:
+        return quotes[0].group(1).strip()
 
     paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
     while (
@@ -631,26 +643,38 @@ def extract_clean_exchange(
     turns: list[tuple[str, str]],
 ) -> tuple[str, str | None] | None:
     """Isole l'échange patient <-> IA "propre" d'une conversation retenue :
-    le message du patient (1er tour) et la réponse finale de l'IA, en
-    ignorant les instructions internes du staff pour peaufiner la réponse
-    ("traduis-la", "réponds plus court", "en arabe"...) et en s'arrêtant
-    dès qu'un message ultérieur ne ressemble plus à une telle instruction
-    (nouveau sujet / message sans rapport plus loin dans le même fil)."""
-    if not turns or turns[0][0] != "user":
+    le message du patient (1er tour "user", pas forcément le tout premier
+    tour : certains fils commencent par un message d'accueil de l'IA) et la
+    réponse finale, en ignorant les instructions internes du staff pour
+    peaufiner la réponse ("traduis-la", "réponds plus court", "en arabe"...)
+    et en s'arrêtant dès qu'un message ultérieur ne ressemble plus à une
+    telle instruction (nouveau sujet / message sans rapport plus loin dans
+    le même fil)."""
+    patient_idx = next((i for i, (role, _) in enumerate(turns) if role == "user"), None)
+    if patient_idx is None:
         return None
 
-    patient_text = clean_patient_message(turns[0][1])
+    patient_text = clean_patient_message(turns[patient_idx][1])
     last_assistant_text: str | None = None
     last_substantive_assistant_text: str | None = None
+    just_saw_instruction = True  # le 1er tour assistant suit directement le patient
 
-    for role, text in turns[1:]:
+    for role, text in turns[patient_idx + 1 :]:
         if role == "assistant":
+            if last_assistant_text is not None and not just_saw_instruction:
+                # 2 tours assistant d'affilée sans instruction du staff entre
+                # les deux : un tour utilisateur invisible (image, pièce
+                # jointe...) a changé de sujet entre-temps. On s'arrête sur
+                # la réponse précédente plutôt que de dériver sur ce sujet.
+                break
             last_assistant_text = text
             if not _META_ONLY_RESPONSE.match(text.strip()):
                 last_substantive_assistant_text = text
+            just_saw_instruction = False
             continue
         # role == "user"
         if _is_staff_instruction_turn(text):
+            just_saw_instruction = True
             continue
         break
 
