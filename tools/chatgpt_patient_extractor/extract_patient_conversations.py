@@ -489,10 +489,142 @@ _STAFF_REFINEMENT_INSTRUCTION = re.compile(
         agit\s+comme|repondre\s+comme|repondre\s+a\s+la\s+mani[èe]re|
         repondre\s+gentiment|
         version\s+(plus\s+)?(courte|longue|formelle)|
-        avec\s+(un\s+)?ton|le\s+ton\b
+        avec\s+(un\s+)?ton|le\s+ton\b|
+        rester\s+vague|contacter\s+secr[ée]tariat|ne\s+pas\s+donner|
+        ajouter|rajouter
     )
     """
 )
+
+_LOOKS_LIKE_NEW_MESSAGE = re.compile(
+    r"""(?xi)
+    ^\s*(
+        as-?salamu?\s*alaykum|salam\b|wa\s*alaykum|assalamu?\s*alaikum|
+        السلام|سلام|
+        bonjour|bonsoir|salut|hello|hi|cher\s+docteur|dear\s+dr
+    )
+    """
+)
+
+
+def _is_staff_instruction_turn(text: str) -> bool:
+    """Un tour utilisateur ultérieur est traité comme une instruction interne
+    du staff à l'IA (à ignorer, pas un nouveau message patient) s'il
+    correspond à un mot-clé connu ("traduis", "en arabe", "plus court"...),
+    ou s'il est court et ne ressemble pas à un nouveau message de patient
+    (pas de salutation/adresse en début de message)."""
+    stripped = text.strip()
+    word_count = len(stripped.split())
+    if _STAFF_REFINEMENT_INSTRUCTION.search(stripped):
+        return True
+    if word_count <= 20 and not _LOOKS_LIKE_NEW_MESSAGE.match(stripped):
+        return True
+    return False
+
+
+_RESPONSE_DIVIDER = re.compile(r"^[ \t]*[-—⸻*_]{3,}[ \t]*$", re.MULTILINE)
+
+_RESPONSE_PREAMBLE = re.compile(
+    r"""(?xi)
+    ^\s*(
+        voici|voil[àa]|bien\s+s[ûu]r|parfait|tr[èe]s\s+bien|d['’]accord|
+        entendu|tamam|طبعا|تمام|بالطبع|مفهوم|
+        ✅|👍|👌
+    )\b
+    """
+)
+
+_RESPONSE_TRAILING_META = re.compile(
+    r"""(?xi)
+    (voulez[- ]vous|souhaitez[- ]vous|veux[- ]tu|tu\s+veux|
+     dites[- ]moi|dis[- ]moi|n['’]h[ée]site\s+pas|
+     هل\s+تريد|هل\s+تحب|أخبرني|تريد\s+أن)
+    """
+)
+
+_META_ONLY_RESPONSE = re.compile(
+    r"""(?xi)
+    ^\s*(bien\s+s[ûu]r|parfait|tr[èe]s\s+bien|d['’]accord|entendu|tamam|
+         تمام|طبعا)\b[^.\n]{0,100}
+    \b(je\s+vais|j['’]int[èe]gre|سأقوم|راه?\s+غادي)\b
+    """
+)
+
+
+def clean_ai_response(text: str) -> str:
+    """Nettoie la réponse de l'IA : ne garde que le message destiné au
+    patient, en retirant le préambule ("Voici une proposition...") et les
+    questions de suivi adressées au staff ("Voulez-vous que je...?")."""
+    dividers = list(_RESPONSE_DIVIDER.finditer(text))
+    if len(dividers) >= 2:
+        inner = text[dividers[0].end() : dividers[-1].start()].strip()
+        if inner:
+            return inner
+
+    paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+    while (
+        paragraphs
+        and len(paragraphs[0].split()) <= 15
+        and _RESPONSE_PREAMBLE.match(paragraphs[0].strip())
+        and "?" not in paragraphs[0]
+        and "؟" not in paragraphs[0]
+    ):
+        paragraphs.pop(0)
+    while (
+        paragraphs
+        and len(paragraphs[-1].split()) <= 40
+        and _RESPONSE_TRAILING_META.search(paragraphs[-1])
+    ):
+        paragraphs.pop()
+
+    cleaned = "\n\n".join(paragraphs).strip()
+    return cleaned or text.strip()
+
+
+_VALEDICTION = re.compile(
+    r"""(?xi)
+    cordialement|bien\s+cordialement|salutations\s+distingu[ée]es|
+    best\s+regards|kind\s+regards|sincerely|respectueusement|
+    avec\s+mes\s+salutations|
+    مع\s+فائق\s+الاحترام|مع\s+تحياتي
+    """
+)
+
+
+def clean_patient_message(text: str) -> str:
+    """Retire les instructions/notes internes que le staff a parfois collées
+    à la suite du message du patient, dans le même tour ("... \n\nRepondre a
+    la maniere dr rifay", ou une longue note de travail après la signature
+    d'un e-mail patient)."""
+    paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+
+    # Si le message du patient se termine par une formule de politesse
+    # (+ signature), tout ce qui suit dans le même tour est presque
+    # toujours une note interne du staff : on coupe net après.
+    for idx, para in enumerate(paragraphs):
+        if _VALEDICTION.search(para) and idx < len(paragraphs) - 1:
+            paragraphs = paragraphs[: idx + 1]
+            break
+
+    # Retire les paragraphes correspondant explicitement à un mot-clé
+    # d'instruction connu (pas l'heuristique "court + sans salutation", trop
+    # agressive ici : une formule de politesse finale légitime ("Best
+    # regards,", "Merci d'avance") est aussi courte et sans salutation, mais
+    # fait partie du message du patient), en tête comme en fin de message.
+    # Un court reliquat (<= 4 mots, ex. une signature "Dr rifay" laissée
+    # après une instruction) est retiré une fois le nettoyage principal fait.
+    while len(paragraphs) > 1 and _STAFF_REFINEMENT_INSTRUCTION.search(
+        paragraphs[0].strip()
+    ):
+        paragraphs.pop(0)
+    while len(paragraphs) > 1 and (
+        _STAFF_REFINEMENT_INSTRUCTION.search(paragraphs[-1].strip())
+        or len(paragraphs[-1].split()) <= 4
+    ):
+        paragraphs.pop()
+
+    cleaned = "\n\n".join(paragraphs).strip()
+    return cleaned or text.strip()
 
 
 def extract_clean_exchange(
@@ -507,20 +639,23 @@ def extract_clean_exchange(
     if not turns or turns[0][0] != "user":
         return None
 
-    patient_text = turns[0][1]
-    assistant_text: str | None = None
+    patient_text = clean_patient_message(turns[0][1])
+    last_assistant_text: str | None = None
+    last_substantive_assistant_text: str | None = None
 
     for role, text in turns[1:]:
         if role == "assistant":
-            assistant_text = text
+            last_assistant_text = text
+            if not _META_ONLY_RESPONSE.match(text.strip()):
+                last_substantive_assistant_text = text
             continue
         # role == "user"
-        is_short_instruction = (
-            len(text.split()) <= 25 and _STAFF_REFINEMENT_INSTRUCTION.search(text)
-        )
-        if is_short_instruction:
+        if _is_staff_instruction_turn(text):
             continue
         break
+
+    final_text = last_substantive_assistant_text or last_assistant_text
+    assistant_text = clean_ai_response(final_text) if final_text else None
 
     return patient_text, assistant_text
 
