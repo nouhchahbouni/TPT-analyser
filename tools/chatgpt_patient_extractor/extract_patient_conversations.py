@@ -144,9 +144,9 @@ class ClassificationResult:
 
 _DOC_KEYWORDS = (
     r"rapport|compte[- ]?rendu|certificat|consentement|attestation|"
-    r"courrier|lettre|bilan|note\s+de\s+service|feuille|fiche|planning|"
+    r"courrier|lettre|bilan|note\s+(?:de\s+)?service|feuille|fiche|planning|"
     r"demande|e-?mail|courriel|script|collation|cadre\s+juridique|"
-    r"ordonnance|document|registre"
+    r"ordonnance|document|registre|procuration"
 )
 
 _STAFF_DOC_DICTATION = re.compile(
@@ -174,7 +174,8 @@ _STAFF_DOC_DICTATION = re.compile(
     message\s+de\s+report|report(?:er)?\s+des?\s+rendez[- ]?vous|
     donne[- ]moi\s+comment\s+g[ée]rer|
     message\s+officiel|
-    cr[ée]ation\s+d['’]un\s+registre|registre\s+du?\s+bloc\s+op[ée]ratoire
+    cr[ée]ation\s+d['’]un\s+registre|registre\s+du?\s+bloc\s+op[ée]ratoire|
+    ^\s*lettre\s+m[ée]dicale
     """
 )
 
@@ -263,7 +264,14 @@ _CONTENT_PRODUCTION = re.compile(
     partage\s+l['’]histoire\s+de\s+son\s+patient|
     derri[èe]re\s+chaque\s+(?:intervention|op[ée]ration)|
     وراء\s+كل\s+عملية\s+قصة|
-    \bmention\s+l[ée]gale?\b
+    \bmention\s+l[ée]gale?\b|
+    ^\s*en\s+(arabe|fran[çc]ais|anglais)\s*$|
+    (j['’]aimes?|abonn[ée]s?|followers?|likes?|vues?)\b.{0,40}
+        \b(augmenter|booster|acheter|gagner|obtenir)\b|
+    \b(augmenter|booster|acheter|gagner|obtenir)\b.{0,40}
+        \b(abonn[ée]s?|followers?|likes?|vues?)\b|
+    (?:\b(?:j['’]aimes?|likes?|vues?|abonn[ée]s?|followers?)\b[\s\S]{0,60}){2,}
+        [\s\S]{0,100}\b(service|tariffs?)\b
     """
 )
 
@@ -278,7 +286,7 @@ _LEGAL_RESEARCH = re.compile(
 
 _ADMIN_INTERNAL = re.compile(
     r"""(?xi)
-    demande\s+de\s+cong[ée]|planning|note\s+de\s+service|
+    demande\s+de\s+cong[ée]|planning|note\s+(?:de\s+)?service|
     feuille\s+de\s+(?:garde|poste)|plan\s+de\s+travail|
     liste\s+(?:des\s+)?explorations|traçabilit[ée]|
     liste\s+du\s+mat[ée]riel|mat[ée]riel\s+(?:ophtalmologique|disponible)|
@@ -289,7 +297,9 @@ _ADMIN_INTERNAL = re.compile(
     r[ée]sum[ée]\s+de\s+la\s+journ[ée]e|
     avis\s+(?:important\s+)?[àa]\s+nos\s+patients|
     nous\s+tenons\s+[àa]\s+vous\s+informer|nous\s+(?:vous\s+)?informons\s+que|
-    cher\s*\(?e?\)?\s*patient|
+    cher\s*\(?s?e?s?\)?\s*patient|
+    panne\s+(?:de|technique)|hors\s+service|إشعار.{0,15}عطل|عطل\s+تقني|
+    نحيطكم\s+علما|service\s+technique.{0,20}intervention|
     mon\s+secr[ée]tariat|notre\s+secr[ée]tariat|
     \bA\s+(arranger|arrager|ex[ée]cuter|ajuster|am[ée]liorer|transformer)\b|
     marketing\s+digital|d[ée]veloppement\s+au\s+cabinet|
@@ -300,7 +310,17 @@ _ADMIN_INTERNAL = re.compile(
     ressource\s+(?:humaine\s+)?d[ée]di[ée]e|
     r[ée]clamations\s+concernant|nombreuses\s+r[ée]clamations|
     am[ée]liorer\s+la\s+gestion\s+des\s+r[ée]ponses|
-    bracelets?\s+(?:bleu|blanc|rouge)|codification\s+des\s+bracelets
+    bracelets?\s+(?:bleu|blanc|rouge)|codification\s+des\s+bracelets|
+    mettre\s+strat[ée]gie|strat[ée]gie\s+\d{4}|priorit[ée]\s+\d{4}|
+    absence\s+de\s+comp[ée]tition|march[ée]\s+vide|
+    changement\s+de\s+techniques?\s+de\s+communication|
+    meilleure\s+relation\s+patient|points?\s+cl[ée]s?\s+pour|
+    agis\s+comme\s+(?:un|une)\s+\w+|
+    quelles?\s+sont\s+les\s+questions\s+[àa]\s+poser\s+[àa]\s+un\s+patient|
+    t[ée]l[ée]travail|
+    validation\s+des\s+comptes[- ]?rendus|
+    r[ée]daction\s+des\s+courriers|
+    \[\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}\]
     """
 )
 
@@ -360,12 +380,12 @@ _RDV_TOPIC = re.compile(
 
 _PRICE_TOPIC = re.compile(
     r"""(?xi)
-    \bprix\b|\btarif\b|\bcombien\b|co[ûu]t\b|\bdevis\b|estimation|
+    \bprix\b|\btarifs?\b|\bcombien\b|co[ûu]t\b|\bdevis\b|estimation|
     \bquotation\b|\bquote\b|\bcost\b|\bpricing\b|\bfee\b|installment|
-    مصاريف|مصروف|تكلفة|كلفة|
+    مصاريف|مصروف|تكلفة|تكاليف|كلفة|
     ثمن|تمن|كم.{0,10}(تمن|ثمن)|كم\s*تتكلف|كم\s*يكلف|
-    شحال\w*.{0,40}(فلوس|درهم|تمن|ثمن|تقام|كيكلف|يكلف|كتحتاج|تكلفة)|
-    (فلوس|درهم|تمن|ثمن|تكلفة).{0,40}شحال|
+    شحال\w*.{0,40}(فلوس|درهم|تمن|ثمن|تقام|كيكلف|يكلف|تكلف|كتحتاج|تكلفة)|
+    (فلوس|درهم|تمن|ثمن|تكلف).{0,40}شحال|
     \b(taman|chhal|hchal)\b
     """
 )
@@ -386,7 +406,9 @@ _CONTACT_REQUEST_TOPIC = re.compile(
     n[uú]m[ée]ro\s+de\s+(t[ée]l[ée]phone|tlf|tel)\b|
     arrive\s+pas\s+[àa]\s+(vous\s+)?joindre|
     n['’]arrive\s+pas\s+[àa]\s+(vous\s+)?(joindre|contacter)|
-    ^\s*adresse\s+du\s+cabinet\s*$
+    ^\s*adresse\s+du\s+cabinet\s*$|
+    votre\s+num[ée]ro\b|
+    num[ée]ro\b.{0,20}\badresse\b|adresse\b.{0,20}\bnum[ée]ro\b
     """
 )
 
@@ -420,7 +442,7 @@ _FIRST_PERSON_FR = re.compile(
 _FIRST_PERSON_AR_DARIJA = re.compile(
     r"""(?x)
     أنا|عندي|بغيت|حابس|خصني|خاصني|خص[هنك]?[يمها]*|دياولي|دیالي|ليا|
-    واش|كيفاش|شحال|علاش|شنو|فين|نقدر|أعاني|لديا|لدي\s
+    واش|كيفاش|شحال|علاش|شنو|فين|نقدر|أعاني|لديا|لدي\s|أريد|اريد
     """
 )
 
@@ -437,7 +459,7 @@ _EYE_CARE_TOPIC = re.compile(
 
 _ADDRESS_TO_DOCTOR = re.compile(
     r"""(?xi)
-    \b(docteur|dr\.?|cabinet)\b|دكتور|طبيب|بروفيسور
+    \b(docteur|dr\.?|cabinet)\b|دكتور|طبيب|بروفيسور|بروفسور
     """
 )
 
@@ -605,7 +627,7 @@ _RESPONSE_TRAILING_META = re.compile(
     r"""(?xi)
     (voulez[- ]vous|souhaitez[- ]vous|veux[- ]tu|tu\s+veux|
      dites[- ]moi|dis[- ]moi|n['’]h[ée]site\s+pas|
-     هل\s+تريد|هل\s+تحب|أخبرني|تريد\s+أن|
+     هل\s+تريد|هل\s+تحب|هل\s+ترغب(?:ي|ين)?|أخبرني|تريد\s+أن|
      تحب(?:ي)?\s+ن|بغيتي?\s+ن|تفضلي?\s+ن)
     """
 )
@@ -616,16 +638,19 @@ _RESPONSE_TRAILING_META = re.compile(
 # que la réponse médicale à la question posée.
 _CONTACT_BLOCK = re.compile(
     r"""(?xi)
-    📞|📱|☎|✆|📍|whatsapp|واتساب|secr[ée]tariat|السكرتارية|
-    \b0[5-7][\s.-]?\d{2}(?:[\s.-]?\d{2}){3}\b
+    📞|📱|☎|✆|📍|📧|✉|whatsapp|واتساب|secr[ée]tariat|السكرتارية|
+    \b0[5-7][\s.-]?\d{2}(?:[\s.-]?\d{2}){3}\b|
+    mailto:|@gmail\.com|e-?mail\b|بريد\s+الك?تروني|البريد\s+الإلكتروني
     """
 )
 
 _APPOINTMENT_PROPOSAL_LINE = re.compile(
     r"""(?xi)
-    (prendre|fixer|r[ée]server|d[ée]terminer|d[ée]finir)\s*(un\s+)?
+    (prendre|fixer|r[ée]server|d[ée]terminer|d[ée]finir|proposer)\s*(un\s+)?
         (rendez[- ]?vous|rdv)|
-    (rendez[- ]?vous|rdv)\b.{0,30}\b(prendre|fixer|r[ée]server)|
+    (rendez[- ]?vous|rdv)\b[\s\S]{0,30}\b(prendre|fixer|r[ée]server)|
+    souhaitez[- ]vous\b[\s\S]{0,60}\b(rendez[- ]?vous|rdv)\b|
+    je\s+reste\s+[àa]\s+votre\s+disposition|
     tenir\s+moi\s+.{0,15}courant|
     n['’]h[ée]sitez\s+pas\s+[àa]\s+nous\s+contacter|
     nous\s+(vous\s+)?invitons\s+[àa]\s+(nous\s+)?contacter|
@@ -634,8 +659,10 @@ _APPOINTMENT_PROPOSAL_LINE = re.compile(
     contactez[- ]nous|nous\s+contacter\s+(pour|au)|
     contacter\s+(directement\s+)?(le\s+cabinet|notre\s+secr[ée]tariat)|
     لحجز\s+موعد|حجز\s+موعد|مرحبا\s+بك\s+لحجز|تحديد\s+موعد|حدد\s+موعد|
-    حجز.{0,20}موعد|موعد.{0,20}حجز|
+    حجز.{0,20}موعد|موعد.{0,20}حجز|أخذ.{0,15}(?:ال)?موعد|
+    نعطي[كه]?م?.{0,15}موعد|نعطيك\s+موعد|
     ندعوكم\s+للتواصل|تواصلوا?\s+معنا|
+    لا\s+تتردد(?:وا)?\s+في\s+الاتصال|سنكون\s+سعداء\s+بخدمتك|
     يمكنكم?\s+(?:ال)?(?:اتصال|تواصل)\b.{0,30}(?:لحجز|موعد)
     """
 )
@@ -644,7 +671,18 @@ _APPOINTMENT_PROPOSAL_LINE = re.compile(
 def strip_appointment_proposal(text: str) -> str:
     """Retire les blocs de contact (téléphone/whatsapp/secrétariat) et les
     phrases qui proposent de prendre/fixer un rendez-vous, pour ne garder
-    que la réponse à la question médicale du patient."""
+    que la réponse à la question médicale du patient.
+
+    Une proposition peut être : (a) une phrase isolée noyée dans un
+    paragraphe qui contient par ailleurs une vraie réponse médicale -- dans
+    ce cas on ne retire QUE cette ligne, pour ne pas perdre le reste de la
+    réponse ; ou (b) tout un petit paragraphe de clôture (puces, questions
+    courtes du style "souhaitez-vous un RDV ? ou une explication ?") qui
+    n'est que ça -- dans ce cas on le retire en bloc, sinon des fragments
+    de puces orphelins resteraient. On distingue les deux cas par la
+    longueur du paragraphe : un paragraphe court est presque toujours un
+    bloc de clôture dédié, un paragraphe long mêle proposition et contenu
+    médical réel."""
     paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
 
     without_contact_blocks = [p for p in paragraphs if not _CONTACT_BLOCK.search(p)]
@@ -653,6 +691,9 @@ def strip_appointment_proposal(text: str) -> str:
 
     cleaned_paragraphs = []
     for para in paragraphs:
+        flat = " ".join(para.split("\n"))
+        if len(para) <= 220 and _APPOINTMENT_PROPOSAL_LINE.search(flat):
+            continue
         lines = [
             ln for ln in para.split("\n") if not _APPOINTMENT_PROPOSAL_LINE.search(ln)
         ]
@@ -809,7 +850,9 @@ def extract_clean_exchange(
         break
 
     final_text = last_substantive_assistant_text or last_assistant_text
-    assistant_text = clean_ai_response(final_text) if final_text else None
+    if final_text is None:
+        return None
+    assistant_text = clean_ai_response(final_text)
     if assistant_text:
         assistant_text = strip_appointment_proposal(assistant_text)
 
@@ -898,29 +941,39 @@ def process(input_dir: Path) -> tuple[list[KeptConversation], RunStats]:
     return kept, stats
 
 
-def write_txt(kept: list[KeptConversation], output_path: Path) -> None:
+def filter_kept_with_exchange(
+    kept: list[KeptConversation],
+) -> list[tuple[KeptConversation, tuple[str, str | None]]]:
+    """Ne garde que les conversations pour lesquelles on peut extraire un
+    échange patient/IA exploitable (message patient + au moins une réponse
+    IA) -- élimine les doublons à réponse vide."""
+    result = []
+    for conv in kept:
+        exchange = extract_clean_exchange(conv.turns)
+        if exchange is None or exchange[1] is None:
+            continue
+        result.append((conv, exchange))
+    return result
+
+
+def write_txt(
+    kept_with_exchange: list[tuple[KeptConversation, tuple[str, str | None]]],
+    output_path: Path,
+) -> None:
     separator = "=" * 80
 
     with output_path.open("w", encoding="utf-8") as f:
-        for i, conv in enumerate(kept):
+        for i, (conv, (patient_text, assistant_text)) in enumerate(kept_with_exchange):
             if i > 0:
                 f.write(separator + "\n")
-            f.write(f"CONVERSATION {i + 1}/{len(kept)}\n")
+            f.write(f"CONVERSATION {i + 1}/{len(kept_with_exchange)}\n")
             f.write(f"Titre     : {conv.title}\n")
             f.write(f"ID        : {conv.conv_id}\n")
             f.write(f"Fichier   : {conv.source_file}\n")
             f.write("-" * 80 + "\n")
 
-            exchange = extract_clean_exchange(conv.turns)
-            if exchange is None:
-                continue
-            patient_text, assistant_text = exchange
-
             f.write(f"[DEMANDE DU PATIENT]\n{anonymize(patient_text)}\n\n")
-            if assistant_text:
-                f.write(f"[REPONSE DE L'IA]\n{anonymize(assistant_text)}\n\n")
-            else:
-                f.write("[REPONSE DE L'IA]\n(aucune réponse dans cette conversation)\n\n")
+            f.write(f"[REPONSE DE L'IA]\n{anonymize(assistant_text)}\n\n")
 
 
 def write_csv(kept: list[KeptConversation], output_path: Path) -> None:
@@ -963,8 +1016,14 @@ def main(argv: Iterable[str] | None = None) -> int:
         return 1
 
     kept, stats = process(args.input_dir)
-    write_txt(kept, args.output_txt)
-    write_csv(kept, args.output_csv)
+    kept_with_exchange = filter_kept_with_exchange(kept)
+    dropped_empty = len(kept) - len(kept_with_exchange)
+    stats.kept = len(kept_with_exchange)
+    if dropped_empty:
+        stats.exclusion_reasons["EMPTY_ANSWER_DROPPED"] += dropped_empty
+
+    write_txt(kept_with_exchange, args.output_txt)
+    write_csv([conv for conv, _ in kept_with_exchange], args.output_csv)
     print_stats(stats)
     print(f"\nFichier texte : {args.output_txt}")
     print(f"Fichier CSV   : {args.output_csv}")
