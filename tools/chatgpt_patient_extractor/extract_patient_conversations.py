@@ -319,6 +319,51 @@ _GREETING_ONLY = re.compile(
     """
 )
 
+# Sujets gérés ailleurs par le cabinet : on les exclut sur demande, même
+# quand le message vient bien d'un vrai patient (1ère personne).
+_RDV_TOPIC = re.compile(
+    r"""(?xi)
+    rendez[- ]?vous|\brdv\b|
+    prendre\s+(un\s+)?rendez|confirmer\s+(mon|le|votre)?\s*rendez|
+    annuler|annulation|report(er)?\s+(mon|le|votre)?\s*rendez|
+    modifier\s+(mon|le)?\s*rendez|vos?\s+disponibilit[ée]s?|cr[ée]neaux?|
+    obtenir\s+une\s+consultation|
+    m['’]indiquer\s+(vos?\s+)?disponibilit|
+    d[ée]marche\s+(à\s+suivre\s+)?pour\s+(obtenir|avoir)\s+une\s+consultation|
+    موعد|حجز\s+موعد
+    """
+)
+
+_PRICE_TOPIC = re.compile(
+    r"""(?xi)
+    \bprix\b|\btarif\b|\bcombien\b|co[ûu]t\b|\bdevis\b|estimation|
+    \bquotation\b|\bquote\b|\bcost\b|\bpricing\b|\bfee\b|installment|
+    ثمن|تمن|كم.{0,10}(تمن|ثمن)|
+    شحال\w*.{0,40}(فلوس|درهم|تمن|ثمن|تقام|كيكلف|يكلف|كتحتاج)|
+    (فلوس|درهم|تمن|ثمن).{0,40}شحال|
+    \b(taman|chhal|hchal)\b
+    """
+)
+
+_REFERRAL_REQUEST = re.compile(
+    r"""(?xi)
+    (connaissez[- ]vous|conna[iî]triez[- ]vous)\b.{0,30}\b(docteur|dr|m[ée]decin|sp[ée]cialiste)|
+    pouvez[- ]vous\s+(me\s+)?recommander|
+    recommandation\s+d['’]un\s+(confr[èe]re|sp[ée]cialiste|m[ée]decin)|
+    هل\s+تعرفون?\s+(دكتور|طبيب)\s+مختص
+    """
+)
+
+# Demande purement logistique (comment vous joindre), sans question médicale
+# -- gérée ailleurs, comme les rendez-vous.
+_CONTACT_REQUEST_TOPIC = re.compile(
+    r"""(?xi)
+    n[uú]m[ée]ro\s+de\s+(t[ée]l[ée]phone|tlf|tel)\b|
+    arrive\s+pas\s+[àa]\s+(vous\s+)?joindre|
+    n['’]arrive\s+pas\s+[àa]\s+(vous\s+)?(joindre|contacter)
+    """
+)
+
 PASS1_RULES: list[tuple[str, re.Pattern]] = [
     ("STAFF_DOC_DICTATION", _STAFF_DOC_DICTATION),
     ("STAFF_ON_BEHALF_OF_PATIENT", _STAFF_ON_BEHALF_OF_PATIENT),
@@ -331,6 +376,10 @@ PASS1_RULES: list[tuple[str, re.Pattern]] = [
     ("JOB_APPLICATION", _JOB_APPLICATION),
     ("GENERIC_AUDIENCE_REPLY", _GENERIC_AUDIENCE_REPLY),
     ("MEDICAL_KNOWLEDGE_QUERY", _MEDICAL_KNOWLEDGE_QUERY),
+    ("RDV_TOPIC", _RDV_TOPIC),
+    ("PRICE_TOPIC", _PRICE_TOPIC),
+    ("REFERRAL_REQUEST", _REFERRAL_REQUEST),
+    ("CONTACT_REQUEST_TOPIC", _CONTACT_REQUEST_TOPIC),
 ]
 
 
@@ -530,9 +579,61 @@ _RESPONSE_TRAILING_META = re.compile(
     r"""(?xi)
     (voulez[- ]vous|souhaitez[- ]vous|veux[- ]tu|tu\s+veux|
      dites[- ]moi|dis[- ]moi|n['’]h[ée]site\s+pas|
-     هل\s+تريد|هل\s+تحب|أخبرني|تريد\s+أن)
+     هل\s+تريد|هل\s+تحب|أخبرني|تريد\s+أن|
+     تحب(?:ي)?\s+ن|بغيتي?\s+ن|تفضلي?\s+ن)
     """
 )
+
+# "sans proposer un rendez-vous, sans rien faire" : on retire les blocs de
+# contact (téléphone/whatsapp/secrétariat) et les phrases qui invitent le
+# patient à prendre/fixer un rendez-vous ou à nous contacter, pour ne garder
+# que la réponse médicale à la question posée.
+_CONTACT_BLOCK = re.compile(
+    r"""(?xi)
+    📞|📱|☎|✆|📍|whatsapp|واتساب|secr[ée]tariat|السكرتارية|
+    \b0[5-7][\s.-]?\d{2}(?:[\s.-]?\d{2}){3}\b
+    """
+)
+
+_APPOINTMENT_PROPOSAL_LINE = re.compile(
+    r"""(?xi)
+    (prendre|fixer|r[ée]server|d[ée]terminer|d[ée]finir)\s*(un\s+)?
+        (rendez[- ]?vous|rdv)|
+    (rendez[- ]?vous|rdv)\b.{0,30}\b(prendre|fixer|r[ée]server)|
+    tenir\s+moi\s+.{0,15}courant|
+    n['’]h[ée]sitez\s+pas\s+[àa]\s+nous\s+contacter|
+    nous\s+(vous\s+)?invitons\s+[àa]\s+(nous\s+)?contacter|
+    je\s+vous\s+recommande\s+de\s+(prendre\s+rendez|venir\s+en\s+consultation)|
+    venir\s+en\s+consultation|
+    contactez[- ]nous|nous\s+contacter\s+(pour|au)|
+    contacter\s+(directement\s+)?(le\s+cabinet|notre\s+secr[ée]tariat)|
+    لحجز\s+موعد|حجز\s+موعد|مرحبا\s+بك\s+لحجز|تحديد\s+موعد|حدد\s+موعد|
+    ندعوكم\s+للتواصل|تواصلوا?\s+معنا|
+    يمكنكم?\s+(?:ال)?(?:اتصال|تواصل)\b.{0,30}(?:لحجز|موعد)
+    """
+)
+
+
+def strip_appointment_proposal(text: str) -> str:
+    """Retire les blocs de contact (téléphone/whatsapp/secrétariat) et les
+    phrases qui proposent de prendre/fixer un rendez-vous, pour ne garder
+    que la réponse à la question médicale du patient."""
+    paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
+
+    without_contact_blocks = [p for p in paragraphs if not _CONTACT_BLOCK.search(p)]
+    if without_contact_blocks:
+        paragraphs = without_contact_blocks
+
+    cleaned_paragraphs = []
+    for para in paragraphs:
+        lines = [
+            ln for ln in para.split("\n") if not _APPOINTMENT_PROPOSAL_LINE.search(ln)
+        ]
+        if lines:
+            cleaned_paragraphs.append("\n".join(lines).strip())
+
+    cleaned = "\n\n".join(p for p in cleaned_paragraphs if p.strip())
+    return cleaned or text.strip()
 
 _META_ONLY_RESPONSE = re.compile(
     r"""(?xi)
@@ -680,6 +781,8 @@ def extract_clean_exchange(
 
     final_text = last_substantive_assistant_text or last_assistant_text
     assistant_text = clean_ai_response(final_text) if final_text else None
+    if assistant_text:
+        assistant_text = strip_appointment_proposal(assistant_text)
 
     return patient_text, assistant_text
 
