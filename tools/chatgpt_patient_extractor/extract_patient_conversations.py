@@ -155,6 +155,7 @@ _STAFF_DOC_DICTATION = re.compile(
         r[ée]dige(?:[- ]moi)?|
         r[ée]diger|
         [ée]cris(?:[- ]moi)?|
+        [ée]crire(?:[- ]moi)?|
         pr[ée]pare[rz]?(?:[- ]moi)?|
         propose(?:[- ]moi)?|
         donne(?:[- ]moi)?|
@@ -320,7 +321,12 @@ _ADMIN_INTERNAL = re.compile(
     t[ée]l[ée]travail|
     validation\s+des\s+comptes[- ]?rendus|
     r[ée]daction\s+des\s+courriers|
-    \[\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}\]
+    \[\d{1,2}/\d{1,2}\s+\d{1,2}:\d{2}\]|
+    \bFMC\b|formation\s+m[ée]dicale\s+continue|mod[ée]rateurs?\s*:|orateur\b|
+    cher\s+parent\b|service\s+facturation|eduka\.school|frais\s+scolaires|
+    impp?[ée]ratifs?\s+pour\s+le\s+bon\s+d[ée]roulement|
+    bloc\s+op[ée]ratoire|mat[ée]riel\s+chirurgical\s+(?:disponible|requis)|
+    informer\s+la\s+clinique|contr[ôo]les?\s+et\s+ablations?\s+de\s+lentilles
     """
 )
 
@@ -576,7 +582,7 @@ _ADDRESS_PATTERN = re.compile(
 _STAFF_REFINEMENT_INSTRUCTION = re.compile(
     r"""(?xi)
     ^\s*(
-        r[ée]pond(?:s|re)?\b|repondre\b|
+        r[ée]pond(?:s|re)?\b|repondre\b|r[ée]ponse\s+pour\b|
         traduis|traduire|traduction|
         en\s+arabe|en\s+fran[çc]ais|en\s+anglais|
         (arabe|fran[çc]ais|anglais)\s*[.!]?\s*$|
@@ -638,9 +644,11 @@ _RESPONSE_TRAILING_META = re.compile(
 # que la réponse médicale à la question posée.
 _CONTACT_BLOCK = re.compile(
     r"""(?xi)
-    📞|📱|☎|✆|📍|📧|✉|whatsapp|واتساب|secr[ée]tariat|السكرتارية|
+    📞|📱|☎|✆|📍|📧|✉|
+    (?:whatsapp|واتساب)\s*[:：]|
+    secr[ée]tariat|السك(?:ر|ري)تارية|
     \b0[5-7][\s.-]?\d{2}(?:[\s.-]?\d{2}){3}\b|
-    mailto:|@gmail\.com|e-?mail\b|بريد\s+الك?تروني|البريد\s+الإلكتروني
+    mailto:|@gmail\.com|e-?mail\b\s*[:：]|بريد\s+الك?تروني\s*[:：]|البريد\s+الإلكتروني\s*[:：]
     """
 )
 
@@ -694,11 +702,20 @@ def strip_appointment_proposal(text: str) -> str:
         flat = " ".join(para.split("\n"))
         if len(para) <= 220 and _APPOINTMENT_PROPOSAL_LINE.search(flat):
             continue
-        lines = [
-            ln for ln in para.split("\n") if not _APPOINTMENT_PROPOSAL_LINE.search(ln)
-        ]
-        if lines:
-            cleaned_paragraphs.append("\n".join(lines).strip())
+        # Une phrase-proposition peut être noyée au milieu d'une même ligne
+        # de prose continue (pas de saut de ligne propre) : on affine donc
+        # au niveau de la phrase (ponctuation de fin), pas seulement de la
+        # ligne, pour ne retirer que la phrase fautive.
+        cleaned_lines = []
+        for line in para.split("\n"):
+            clauses = re.split(r"(?<=[.!?؟])\s+", line)
+            kept_clauses = [
+                c for c in clauses if not _APPOINTMENT_PROPOSAL_LINE.search(c)
+            ]
+            if kept_clauses:
+                cleaned_lines.append(" ".join(kept_clauses).strip())
+        if cleaned_lines:
+            cleaned_paragraphs.append("\n".join(cleaned_lines).strip())
 
     cleaned = "\n\n".join(p for p in cleaned_paragraphs if p.strip())
     return cleaned or text.strip()
@@ -719,6 +736,10 @@ _QUOTED_SUGGESTED_REPLY = re.compile(
 
 _PRIVATE_USE_CHARS = re.compile(r"[-]")
 _CITATION_ARTIFACT = re.compile(r"\s*(?:cite)?(?:turn\d+search\d+)+", re.I)
+# Artefact d'appel d'outil ChatGPT (recherche d'images) qui fuite parfois tel
+# quel dans le texte de la reponse -- inutile et incomprehensible pour le
+# patient, a retirer comme les citations web.
+_TOOL_CALL_ARTIFACT = re.compile(r"image_group\{[^}]*\}\n?")
 
 
 def clean_ai_response(text: str) -> str:
@@ -731,6 +752,7 @@ def clean_ai_response(text: str) -> str:
     # charabia inutile pour le patient.
     text = _PRIVATE_USE_CHARS.sub("", text)
     text = _CITATION_ARTIFACT.sub("", text)
+    text = _TOOL_CALL_ARTIFACT.sub("", text)
     dividers = list(_RESPONSE_DIVIDER.finditer(text))
     if len(dividers) >= 2:
         inner = text[dividers[0].end() : dividers[-1].start()].strip()
@@ -740,9 +762,16 @@ def clean_ai_response(text: str) -> str:
     # Cas "voici le message à envoyer : « ... »" : un seul bloc entre
     # guillemets, substantiel, est presque toujours LE message suggéré
     # (le reste est un commentaire du staff, pas destiné au patient).
+    # Mais si la citation n'est qu'une petite phrase suggérée noyée dans une
+    # réponse médicale bien plus riche (ex: "dis-leur clairement : « ... »"
+    # au milieu d'une explication complète), il ne faut PAS réduire toute la
+    # réponse à cette seule phrase -- on exige donc que la citation
+    # représente une part substantielle du texte total.
     quotes = list(_QUOTED_SUGGESTED_REPLY.finditer(text))
-    if len(quotes) == 1 and len(quotes[0].group(1).split()) >= 10:
-        return quotes[0].group(1).strip()
+    if len(quotes) == 1:
+        quoted = quotes[0].group(1).strip()
+        if len(quoted.split()) >= 10 and len(quoted) >= 0.5 * len(text.strip()):
+            return quoted
 
     paragraphs = [p for p in re.split(r"\n\s*\n", text.strip()) if p.strip()]
     while (
@@ -806,7 +835,20 @@ def clean_patient_message(text: str) -> str:
     ):
         paragraphs.pop()
 
-    cleaned = "\n\n".join(paragraphs).strip()
+    # Une instruction courte du staff est parfois collée à la suite du
+    # dernier message du patient SANS saut de paragraphe (ex: un avis
+    # client suivi directement de "reponse pour l'avis du patient") : on la
+    # détecte comme dernière "phrase" courte du dernier paragraphe.
+    if paragraphs:
+        sentences = re.split(r"(?<=[.!؟?])[‎‏]*\s+", paragraphs[-1])
+        if (
+            len(sentences) > 1
+            and len(sentences[-1].split()) <= 8
+            and _STAFF_REFINEMENT_INSTRUCTION.search(sentences[-1])
+        ):
+            paragraphs[-1] = " ".join(sentences[:-1]).strip()
+
+    cleaned = "\n\n".join(p for p in paragraphs if p.strip()).strip()
     return cleaned or text.strip()
 
 
