@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "question": "Le cabinet prend-il en charge le strabisme ?",
+      "answer": "Oui, la prise en charge du strabisme fait partie des activités du cabinet, chez l'enfant comme chez l'adulte."
+    },
+    {
+      "question": "L'opération du strabisme se fait-elle au laser ?",
+      "answer": "Non, il s'agit d'une chirurgie classique portant sur les muscles de l'œil, pas d'une chirurgie laser."
+    },
+    {
+      "question": "Combien de temps dure la récupération après une opération du strabisme ?",
+      "answer": "La rougeur diminue en général en une à deux semaines et disparaît en trois à quatre semaines, la reprise des activités habituelles se fait le plus souvent après une semaine."
+    },
+    {
+      "question": "Qu'est-ce que l'amblyopie, ou œil paresseux ?",
+      "answer": "C'est une baisse de vision d'un œil liée à un développement visuel incomplet pendant l'enfance."
+    },
+    {
+      "question": "L'amblyopie peut-elle encore être traitée à l'âge adulte ?",
+      "answer": "Le traitement est nettement plus efficace avant l'âge de sept à huit ans, à l'âge adulte seule la correction optique des défauts associés reste possible."
+    },
+    {
+      "question": "Un strabisme qui persiste après une opération peut-il être recorrigé ?",
+      "answer": "Oui, une réévaluation complète permet de déterminer la cause de la persistance et d'envisager une nouvelle prise en charge."
+    }
+  ]
+}

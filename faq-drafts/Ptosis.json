@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "question": "Qu'est-ce que le ptosis, ou chute de la paupière ?",
+      "answer": "C'est un abaissement anormal de la paupière supérieure, lié à l'âge, à une origine congénitale, à un affaiblissement musculaire, ou parfois à une chirurgie oculaire antérieure."
+    },
+    {
+      "question": "Comment traite-t-on le ptosis ?",
+      "answer": "Le traitement principal est chirurgical, il consiste à renforcer ou raccourcir le muscle releveur de la paupière selon la cause et le degré de chute."
+    },
+    {
+      "question": "À partir de quel âge peut-on opérer un ptosis chez l'enfant ?",
+      "answer": "L'intervention est généralement différée pour laisser l'enfant grandir, sauf si le ptosis gêne la vision, auquel cas elle peut être avancée."
+    }
+  ]
+}

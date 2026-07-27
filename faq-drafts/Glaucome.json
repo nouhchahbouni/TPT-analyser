@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "question": "En quoi consiste le traitement au laser du glaucome ?",
+      "answer": "C'est un traitement réalisé en consultation, sans incision, qui améliore l'évacuation naturelle du liquide de l'œil et peut permettre de réduire ou remplacer les gouttes."
+    },
+    {
+      "question": "Le traitement au laser du glaucome est-il douloureux ou nécessite-t-il une hospitalisation ?",
+      "answer": "Non, ce traitement dure quelques minutes, n'est pas douloureux et ne nécessite généralement pas d'hospitalisation."
+    }
+  ]
+}

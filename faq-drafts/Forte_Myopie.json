@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "question": "Le laser peut-il corriger une myopie très forte ?",
+      "answer": "Le laser a une limite de correction, généralement entre huit et dix dioptries selon l'épaisseur de la cornée, au-delà d'autres solutions sont proposées."
+    },
+    {
+      "question": "Quelle solution existe pour une myopie au-delà de dix dioptries ?",
+      "answer": "Un implant phaque, placé à l'intérieur de l'œil devant le cristallin, permet de corriger des myopies fortes, généralement jusqu'à vingt voire vingt-cinq dioptries selon les cas."
+    },
+    {
+      "question": "Les lentilles de contact sont-elles une alternative à la chirurgie pour une myopie forte ?",
+      "answer": "Oui, des lentilles adaptées peuvent offrir une meilleure qualité de vision que les lunettes, en attendant ou à la place d'une chirurgie."
+    }
+  ]
+}

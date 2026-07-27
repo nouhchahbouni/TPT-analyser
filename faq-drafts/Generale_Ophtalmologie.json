@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "question": "J'ai vu apparaître d'un coup beaucoup de points noirs ou des éclairs lumineux dans mon champ de vision, est-ce grave ?",
+      "answer": "Une apparition brutale et importante de corps flottants ou d'éclairs lumineux peut signaler une déchirure de la rétine et nécessite un examen en urgence."
+    },
+    {
+      "question": "Avoir quelques points noirs qui bougent dans le champ de vision est-il normal ?",
+      "answer": "De petits corps flottants isolés et stables sont fréquents, notamment après quarante ans, mais toute aggravation brutale doit être signalée rapidement."
+    },
+    {
+      "question": "Le cabinet prend-il en charge toutes les pathologies des yeux ?",
+      "answer": "Certaines pathologies très spécifiques, comme l'exophtalmie liée à une maladie générale, ne sont pas prises en charge au cabinet, une orientation vers un confrère spécialisé peut alors être proposée."
+    }
+  ]
+}

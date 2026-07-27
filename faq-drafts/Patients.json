@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "question": "Une opération peut-elle faire l'objet d'une prise en charge par l'assurance ?",
+      "answer": "Les interventions à but thérapeutique, comme la cataracte, le glaucome ou certaines chirurgies de la rétine, peuvent être éligibles à une prise en charge sous réserve d'un accord préalable de l'assurance."
+    },
+    {
+      "question": "La chirurgie réfractive est-elle remboursée par l'assurance ou la mutuelle ?",
+      "answer": "Les chirurgies à visée de confort comme la chirurgie réfractive sont généralement considérées comme non essentielles par les assurances et sont rarement remboursées."
+    }
+  ]
+}

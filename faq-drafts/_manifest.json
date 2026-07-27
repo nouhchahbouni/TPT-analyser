@@ -1,0 +1,76 @@
+{
+  "topics": [
+    {
+      "file": "Strabisme_et_Amblyopie.json",
+      "topic": "Strabisme et Amblyopie",
+      "status": "new",
+      "itemCount": 6,
+      "reasoning": "53 conversations réelles portent sur le strabisme ou l'amblyopie et aucun des 18 sujets existants ne couvre cette pathologie ; le volume et la spécificité justifient un sujet dédié plutôt qu'un ajout dispersé.",
+      "description": "Strabisme (yeux qui louchent) et amblyopie (œil paresseux) chez l'enfant et l'adulte : dépistage, traitement, chirurgie, récupération."
+    },
+    {
+      "file": "Ptosis.json",
+      "topic": "Ptosis",
+      "status": "new",
+      "itemCount": 3,
+      "reasoning": "11 conversations réelles portent spécifiquement sur le ptosis, une pathologie distincte non couverte par les 18 sujets existants ; le volume est comparable à d'autres sujets déjà isolés dans cet ensemble (Glaucome, Pterygion).",
+      "description": "Ptosis (chute de la paupière supérieure) : causes, traitement chirurgical, prise en charge chez l'enfant."
+    },
+    {
+      "file": "Generale_Ophtalmologie.json",
+      "topic": "Generale Ophtalmologie",
+      "status": "existing",
+      "itemCount": 3,
+      "reasoning": "Signes d'urgence généraux et périmètre des pathologies traitées relèvent de l'ophtalmologie générale, pas d'un sujet chirurgical ou administratif spécifique."
+    },
+    {
+      "file": "Chirurgie_Refractive.json",
+      "topic": "Chirurgie Refractive",
+      "status": "existing",
+      "itemCount": 2,
+      "reasoning": "L'éligibilité par âge est la question la plus récurrente autour de la chirurgie réfractive dans les échanges réels, avec des demandes à des âges très variés (14, 16, 20, 21 ans)."
+    },
+    {
+      "file": "Cataracte.json",
+      "topic": "Cataracte",
+      "status": "existing",
+      "itemCount": 2,
+      "reasoning": "Inquiétude post-opératoire fréquente (corps flottants) et question récurrente sur l'association cataracte-tension oculaire élevée, deux sujets naturellement rattachés au parcours cataracte."
+    },
+    {
+      "file": "Keratocone.json",
+      "topic": "Keratocone",
+      "status": "existing",
+      "itemCount": 5,
+      "reasoning": "Cinq questions distinctes et récurrentes sur le cross-linking, l'âge, le sport, la chirurgie réfractive associée et le remboursement apparaissent dans les échanges réels sans réponse dédiée visible."
+    },
+    {
+      "file": "Glaucome.json",
+      "topic": "Glaucome",
+      "status": "existing",
+      "itemCount": 2,
+      "reasoning": "Le traitement au laser du glaucome (trabéculoplastie) revient dans les échanges réels sans explication dédiée visible dans les sujets actuels."
+    },
+    {
+      "file": "Patients.json",
+      "topic": "Patients",
+      "status": "existing",
+      "itemCount": 2,
+      "reasoning": "La prise en charge assurance/mutuelle est une question administrative récurrente dans les échanges réels, avec une distinction claire et répétée entre chirurgie thérapeutique et chirurgie de confort."
+    },
+    {
+      "file": "Forte_Myopie.json",
+      "topic": "Forte Myopie",
+      "status": "existing",
+      "itemCount": 3,
+      "reasoning": "Le sujet existe déjà mais son contenu n'est ni en français ni lié aux agents ; ce fichier fournit un contenu français de remplacement directement fondé sur plus de cent échanges réels sur la myopie forte et les implants phaques."
+    }
+  ],
+  "openQuestions": [
+    "Consultations vidéo : une conversation réelle affirme qu'elles sont impossibles au regard de la loi marocaine 09-08 sur la téléconsultation, une autre décrit des consultations vidéo/téléphoniques comme partie normale du protocole pré-opératoire pour les patients résidant à l'étranger. Ces deux réponses se contredisent, seul le cabinet peut confirmer la politique réelle avant toute publication.",
+    "Prise en charge assurance (pourcentages CNSS/AMO/CNOPS/mutuelle privée) : une conversation réelle donne une répartition chiffrée par type d'assurance, trop dépendante des contrats et susceptible de changer pour être publiée telle quelle sans confirmation du cabinet.",
+    "Paiement échelonné : une patiente a demandé si un paiement en plusieurs fois était possible pour une opération, aucune réponse standard n'a été trouvée dans les échanges, décision propre au cabinet.",
+    "Contenu réel de 'Cabinet Expertise' et 'Chirurgie Cataracte' (fixation sclérale/implants Artisan) : aucun échange du lot fourni ne documente clairement ces deux sujets, à vérifier avant de considérer les ajouts ci-dessus comme non redondants.",
+    "Le sujet Forte Myopie existe déjà mais n'est lié à aucun des deux agents et son contenu actuel n'est pas en français ; le fichier Forte_Myopie.json fourni ici est pensé comme un contenu de remplacement, à valider avant import."
+  ]
+}
