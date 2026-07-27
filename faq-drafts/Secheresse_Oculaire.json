@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "question": "Peut-on faire une chirurgie réfractive en cas de sécheresse oculaire ?",
+      "answer": "Oui dans certains cas, mais la sécheresse doit d'abord être évaluée et traitée avant d'envisager l'intervention."
+    },
+    {
+      "question": "Les lentilles de contact peuvent-elles provoquer une sécheresse oculaire ?",
+      "answer": "Oui, c'est une cause fréquente, surtout en cas de port prolongé, des larmes artificielles sans conservateur ou un changement de type de lentilles peuvent améliorer le confort."
+    },
+    {
+      "question": "Une vision qui se trouble par moments pendant la lecture ou l'utilisation du téléphone peut-elle être liée à la sécheresse oculaire ?",
+      "answer": "Oui, une lecture prolongée réduit la fréquence du clignement, ce qui peut favoriser une sécheresse oculaire et un flou visuel intermittent."
+    }
+  ]
+}

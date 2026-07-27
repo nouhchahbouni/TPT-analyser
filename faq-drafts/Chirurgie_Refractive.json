@@ -7,6 +7,10 @@
     {
       "question": "Un enfant peut-il faire une chirurgie réfractive au laser ?",
       "answer": "Non, ce type d'intervention n'est pas réalisé chez l'enfant car l'œil est encore en développement, la correction se fait par lunettes ou lentilles."
+    },
+    {
+      "question": "La chirurgie réfractive est-elle possible en cas de rétine fragile ?",
+      "answer": "Non, si la rétine est fragile ou à risque de décollement, la chirurgie réfractive est déconseillée et un suivi régulier avec un spécialiste de la rétine est nécessaire."
     }
   ]
 }

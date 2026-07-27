@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "question": "Existe-t-il une solution chirurgicale à la presbytie autre que les lunettes ?",
+      "answer": "Oui, un implant intraoculaire multifocal ou une technique laser adaptée peuvent être proposés selon l'examen, en particulier en présence d'un début de cataracte."
+    },
+    {
+      "question": "Peut-on faire une chirurgie réfractive après 50 ans ?",
+      "answer": "Oui dans la plupart des cas, la décision dépend du type de défaut visuel et de l'état de la cornée, du cristallin et de la rétine, pas seulement de l'âge."
+    },
+    {
+      "question": "Après une chirurgie réfractive réussie, la vision peut-elle à nouveau baisser des années plus tard ?",
+      "answer": "Cela correspond le plus souvent à l'apparition naturelle de la presbytie liée à l'âge, ce n'est pas un échec de l'intervention."
+    }
+  ]
+}

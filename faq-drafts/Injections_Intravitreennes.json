@@ -1,0 +1,16 @@
+{
+  "items": [
+    {
+      "question": "Qu'est-ce que la DMLA, ou dégénérescence maculaire liée à l'âge ?",
+      "answer": "C'est une maladie qui touche le centre de la rétine et affecte la vision centrale, il en existe une forme sèche et une forme humide."
+    },
+    {
+      "question": "Les injections intravitréennes permettent-elles de récupérer complètement la vision ?",
+      "answer": "Leur objectif principal est de stabiliser la situation et d'éviter une aggravation, une amélioration de la vision est possible mais n'est pas systématique."
+    },
+    {
+      "question": "Existe-t-il une alternative aux injections intravitréennes pour certaines maladies de la rétine ?",
+      "answer": "Pour certaines pathologies, il n'existe pas d'alternative aussi efficace, les injections répétées visent à maintenir la stabilité de l'œil."
+    }
+  ]
+}

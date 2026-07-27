@@ -1,0 +1,12 @@
+{
+  "items": [
+    {
+      "question": "Comment traite-t-on la rétinopathie diabétique ?",
+      "answer": "Le traitement dépend du stade, un bon contrôle du diabète suffit souvent au stade précoce, tandis que les stades avancés peuvent nécessiter un laser rétinien, des injections intraoculaires ou une chirurgie selon la situation."
+    },
+    {
+      "question": "Peut-on opérer un patient diabétique ?",
+      "answer": "Oui, à condition que le diabète soit bien équilibré et que la rétine soit vérifiée au préalable, la cicatrisation peut être un peu plus lente et un suivi rapproché est alors nécessaire."
+    }
+  ]
+}

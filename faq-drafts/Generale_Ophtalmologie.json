@@ -11,6 +11,10 @@
     {
       "question": "Le cabinet prend-il en charge toutes les pathologies des yeux ?",
       "answer": "Certaines pathologies très spécifiques, comme l'exophtalmie liée à une maladie générale, ne sont pas prises en charge au cabinet, une orientation vers un confrère spécialisé peut alors être proposée."
+    },
+    {
+      "question": "Le médecin m'a prescrit des lunettes avec un filtre thérapeutique, est-ce que j'ai une infection ?",
+      "answer": "Non, un filtre thérapeutique sert à protéger l'œil ou à améliorer le confort visuel, par exemple en cas de sécheresse, de sensibilité à la lumière ou après une opération, il ne traite pas une infection."
     }
   ]
 }

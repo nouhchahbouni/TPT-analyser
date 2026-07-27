@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "question": "Le ptérygion peut-il revenir après une opération ?",
+      "answer": "Oui, une récidive est possible, son risque dépend de la taille du ptérygion, de l'exposition au soleil et de la technique chirurgicale utilisée."
+    },
+    {
+      "question": "Comment réduire le risque de récidive après une opération du ptérygion ?",
+      "answer": "Porter des lunettes de soleil filtrant les UV, protéger l'œil du vent et de la poussière, et suivre le traitement et les rendez-vous de contrôle prescrits."
+    },
+    {
+      "question": "Peut-on faire une chirurgie réfractive en présence d'un ptérygion ?",
+      "answer": "Si le ptérygion touche la cornée, il est traité en premier et la cornée doit se stabiliser avant d'envisager une chirurgie réfractive."
+    },
+    {
+      "question": "Dans quel ordre se déroulent une opération du ptérygion et une opération de la cataracte sur le même œil ?",
+      "answer": "L'intervention du ptérygion est réalisée en premier, l'opération de la cataracte est programmée après la cicatrisation."
+    }
+  ]
+}

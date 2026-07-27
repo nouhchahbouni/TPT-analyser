@@ -7,6 +7,10 @@
     {
       "question": "Peut-on faire une chirurgie de la cataracte si la tension oculaire est élevée ?",
       "answer": "C'est possible si la tension oculaire reste stable et que le nerf optique n'est pas atteint, une évaluation du nerf optique et du champ visuel est réalisée avant l'intervention."
+    },
+    {
+      "question": "Une vision trouble après une opération de la cataracte est-elle normale ?",
+      "answer": "Une vision trouble peut persister quelques jours à quelques semaines pendant la cicatrisation, une gêne qui persiste plusieurs semaines sans amélioration justifie une consultation de contrôle."
     }
   ]
 }
